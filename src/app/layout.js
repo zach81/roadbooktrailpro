@@ -1,10 +1,13 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from '@/context/AuthContext';
+import { NavbarActionsProvider } from '@/context/NavbarActionsContext';
 import Navbar from '@/components/Navbar';
 import "./globals.css";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -12,8 +15,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+
 export const metadata = {
-  title: "TrailRoadbookPro",
+  title: "mykairn",
   description: "Application professionnelle pour la génération de roadbooks de trail à partir de traces GPX.",
 };
 
@@ -24,12 +28,14 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          <Navbar />
-          <main className="container" style={{ paddingTop: '2rem', paddingBottom: '4rem' }}>
-            {children}
-          </main>
-        </AuthProvider>
+        <NavbarActionsProvider>
+          <AuthProvider>
+            <Navbar />
+            <main className="container" style={{ paddingTop: '2rem', paddingBottom: '4rem' }}>
+              {children}
+            </main>
+          </AuthProvider>
+        </NavbarActionsProvider>
       </body>
     </html>
   );

@@ -57,33 +57,78 @@
 
 .statsBar {
   display: flex;
-  gap: 16px;
+  gap: 0;
   background-color: var(--bg-surface);
-  padding: 16px 24px;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-subtle);
-  flex-wrap: wrap;
+  overflow: hidden;
 }
 
 .statBox {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-width: 120px;
+  min-width: 110px;
+  padding: 14px 20px;
+  border-right: 1px solid var(--border-subtle);
+  transition: background-color var(--transition-fast);
+}
+
+.statBox:last-child {
+  border-right: none;
+}
+
+.statBox:hover {
+  background-color: var(--bg-surface-elevated);
 }
 
 .statBox span {
-  font-size: 0.75rem;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
   text-transform: uppercase;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
 }
 
 .statBox strong {
-  font-size: 1.25rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
   color: var(--text-primary);
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.statBox strong small {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 2px;
+  letter-spacing: 0;
+}
+
+/* Highlighted time stat */
+.statBoxTime {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.04) 0%, rgba(245, 158, 11, 0.04) 100%);
+  border-left: 2px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+.statBoxTime strong {
+  font-size: 1.35rem;
+  gap: 4px;
+}
+
+.timeSep {
+  color: var(--border-subtle);
+  font-weight: 400;
+  font-size: 1.1rem;
+  margin: 0 2px;
+  line-height: 1;
 }
 
 .globalParamsBar {
@@ -101,15 +146,33 @@
 .paramGroup {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-width: 200px;
 }
 
+.sectionTitle {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .paramLabel {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .layout {

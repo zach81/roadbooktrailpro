@@ -1,55 +1,100 @@
+/* ─── Navbar ─────────────────────────────────────────────────────────────── */
 .navbar {
   background-color: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
   z-index: 100;
-  padding: 1rem 0;
+  padding: 0;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 1px 0 var(--border-subtle), var(--shadow-sm);
 }
 
 .navContainer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  height: 100%;
+  gap: 16px;
 }
 
+/* ─── Logo ───────────────────────────────────────────────────────────────── */
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-family: 'Outfit', sans-serif;
-  font-weight: 700;
-  font-size: 1.25rem;
-  color: var(--text-primary);
+  gap: 9px;
+  text-decoration: none;
+  flex-shrink: 0;
 }
 
 .logoIcon {
   color: var(--color-primary);
+  flex-shrink: 0;
 }
 
+.logoText {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #f97316 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+
+/* ─── Page Actions Slot (injected by pages) ──────────────────────────────── */
+.pageActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
+/* Separator between logo and page actions */
+.pageActions::before {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 22px;
+  background-color: var(--border-subtle);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* ─── Right side nav links ───────────────────────────────────────────────── */
 .navLinks {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .link {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-display);
   font-weight: 500;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
-  transition: color var(--transition-fast);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
 }
-
 .link:hover {
   color: var(--text-primary);
+  background-color: var(--bg-surface-elevated);
 }
 
+/* ─── User menu pill ─────────────────────────────────────────────────────── */
 .userMenu {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   background-color: var(--bg-surface-elevated);
-  padding: 6px 12px;
+  padding: 5px 5px 5px 12px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
 }
@@ -57,26 +102,51 @@
 .userEmail {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.875rem;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--text-secondary);
+  letter-spacing: 0;
 }
 
 .logoutBtn {
-  background: none;
-  border: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  padding: 5px;
   border-radius: 50%;
   transition: all var(--transition-fast);
+  width: 28px;
+  height: 28px;
+}
+.logoutBtn:hover {
+  color: #EF4444;
+  background-color: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
 }
 
-.logoutBtn:hover {
-  color: #EF4444; /* Red color for logout */
-  background-color: rgba(239, 68, 68, 0.1);
+.helpLink {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+  width: 28px;
+  height: 28px;
+  text-decoration: none;
+}
+.helpLink:hover {
+  color: var(--color-primary);
+  background-color: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.25);
 }

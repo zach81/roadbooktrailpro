@@ -6,12 +6,15 @@ import { useRouter, useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import dynamic from 'next/dynamic';
-import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2 } from "lucide-react";
+import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2, Coffee } from "lucide-react";
 import Link from "next/link";
 import styles from "./editor.module.css";
-import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold } from "@/lib/roadbookCalculator";
+import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromVMA, estimateTimeFromITRA, calculateKmEffort } from "@/lib/roadbookCalculator";
 import ElevationProfile from '@/components/ElevationProfile';
 import SegmentElevationProfile from '@/components/SegmentElevationProfile';
+import DisplaySettings, { useDisplaySettings } from "@/components/DisplaySettings";
+import { useNavbarActions } from "@/context/NavbarActionsContext";
+
 // Dynamic import for Leaflet Map to avoid SSR issues
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
   ssr: false,
@@ -23,6 +26,8 @@ export default function RoadbookEditor() {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
+  const { config: displayConfig, updateConfig, isLoaded: displayLoaded } = useDisplaySettings("roadbookViewConfig");
+  const { setActions } = useNavbarActions();
 
   const [roadbook, setRoadbook] = useState(null);
   const [points, setPoints] = useState([]);
@@ -39,9 +44,13 @@ export default function RoadbookEditor() {
   const [officialElevation, setOfficialElevation] = useState("");
   const [itraIndex, setItraIndex] = useState("");
   const [vma, setVma] = useState("");
+  const [descentThreshold, setDescentThreshold] = useState(15);
   const [carbTarget, setCarbTarget] = useState("60");
   const [sodiumTarget, setSodiumTarget] = useState("400");
   const [waterTarget, setWaterTarget] = useState("500");
+  const [caffeineTarget, setCaffeineTarget] = useState("50");
+  const [weight, setWeight] = useState("");
+  const [weather, setWeather] = useState("modere");
   const [segments, setSegments] = useState([]);
   const [inventory, setInventory] = useState([
     { id: 1, name: 'Gel Classique', carbs: 25, sodium: 50, caffeine: 0 },
@@ -63,15 +72,24 @@ export default function RoadbookEditor() {
       const distFactor = (officialDistance && parseFloat(officialDistance) > 0 && rawStats.distance > 0) ? (parseFloat(officialDistance) / rawStats.distance) : 1;
       const optThreshold = (officialElevation && parseFloat(officialElevation) > 0) ? findOptimalElevationThreshold(points, parseFloat(officialElevation)) : 5;
       
-      const newSegments = generateSegments(points, enrichedWp, targetFast, targetSlow, fatiguePercent, startTime, optThreshold, distFactor);
+      const newSegments = generateSegments(
+        points, enrichedWp, targetFast, targetSlow, fatiguePercent,
+        startTime, optThreshold, distFactor,
+        weather, parseFloat(descentThreshold) || 15
+      );
       setSegments(newSegments);
     }
-  }, [points, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation]);
+  }, [points, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold]);
 
   const formatTime = (isoString) => {
-    if (!isoString) return "--:--";
-    return new Date(isoString).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    if (!isoString) return "--h--";
+    const date = new Date(isoString);
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    return `${h}h${m}`;
   };
+
+  const round10 = (val) => Math.round(val / 10) * 10;
 
   const formatDuration = (ms) => {
     const totalMinutes = Math.floor(ms / 60000);
@@ -113,8 +131,12 @@ export default function RoadbookEditor() {
           if (data.carbTarget !== undefined) setCarbTarget(data.carbTarget.toString());
           if (data.sodiumTarget !== undefined) setSodiumTarget(data.sodiumTarget.toString());
           if (data.waterTarget !== undefined) setWaterTarget(data.waterTarget.toString());
+          if (data.caffeineTarget !== undefined) setCaffeineTarget(data.caffeineTarget.toString());
+          if (data.weight !== undefined) setWeight(data.weight.toString());
+          if (data.weather) setWeather(data.weather);
           if (data.itraIndex) setItraIndex(data.itraIndex);
           if (data.vma) setVma(data.vma);
+          if (data.descentThreshold !== undefined) setDescentThreshold(data.descentThreshold);
           if (data.inventory) {
             const inv = JSON.parse(data.inventory);
             setInventory(inv);
@@ -223,8 +245,12 @@ export default function RoadbookEditor() {
         carbTarget: parseInt(carbTarget) || 0,
         sodiumTarget: parseInt(sodiumTarget) || 0,
         waterTarget: parseInt(waterTarget) || 0,
+        caffeineTarget: parseInt(caffeineTarget) || 0,
+        weight: parseFloat(weight) || 0,
+        weather: weather,
         itraIndex: itraIndex,
         vma: vma,
+        descentThreshold: parseFloat(descentThreshold) || 15,
         inventory: JSON.stringify(inventory),
       });
       alert("Sauvegardé avec succès !");
@@ -236,36 +262,46 @@ export default function RoadbookEditor() {
     }
   };
 
+  // Inject navbar actions (sticky bar)
+  useEffect(() => {
+    setActions(
+      <>
+        {displayLoaded && <DisplaySettings config={displayConfig} updateConfig={updateConfig} />}
+        <Link href={`/roadbook/${id}`} className="btn btn-secondary" style={{fontSize:'0.85rem', padding:'6px 14px'}}>
+          Tableau de marche
+        </Link>
+        <button onClick={saveRoadbook} disabled={saving} className="btn btn-primary" style={{fontSize:'0.85rem', padding:'6px 14px'}}>
+          {saving ? <Loader2 className="lucide-spin" size={16} /> : <Save size={16} />}
+          {saving ? "Sauvegarde..." : "Sauvegarder"}
+        </button>
+      </>
+    );
+    return () => setActions(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayLoaded, displayConfig, saving, id]);
+
+  // Auto-calculate speed targets from VMA or ITRA index (modèle Jack Daniels VDOT adapté trail)
   useEffect(() => {
     if (!roadbook || (!vma && !itraIndex)) return;
-    
-    let baseSpeed = 0;
-    
-    // Total km-effort de la trace
     const totalDist = roadbook.stats?.distance || 0;
     const totalEle = roadbook.stats?.elevation?.pos || 0;
-    const kmEffort = totalDist + (totalEle / 100);
-    
+    const totalEleNeg = roadbook.stats?.elevation?.neg || 0;
+    // Utiliser le nouveau modèle Minetti pour le km-effort
+    const kmEffort = calculateKmEffort(totalDist, totalEle, totalEleNeg, parseFloat(descentThreshold) || 15, 10);
+
+    let estimate = null;
     if (vma && !isNaN(parseFloat(vma))) {
-      baseSpeed = parseFloat(vma) * 0.55;
+      estimate = estimateTimeFromVMA(parseFloat(vma), kmEffort, fatiguePercent || 15);
     } else if (itraIndex && !isNaN(parseInt(itraIndex))) {
-      const index = parseInt(itraIndex);
-      if (index > 0 && index <= 1000) {
-        baseSpeed = (index / 1000) * 16;
-      }
+      estimate = estimateTimeFromITRA(parseInt(itraIndex), kmEffort, fatiguePercent || 15);
     }
-    
-    if (baseSpeed > 0) {
-      const fatigueMultiplier = 1 + (kmEffort / 10) * 0.005; 
-      const estimatedTime = (kmEffort / baseSpeed) * fatigueMultiplier;
-      
-      const newFast = Math.round(estimatedTime * 10) / 10;
-      const newSlow = Math.round(estimatedTime * 1.2 * 10) / 10;
-      
-      if (Math.abs(newFast - targetFast) > 0.1) setTargetFast(newFast);
-      if (Math.abs(newSlow - targetSlow) > 0.1) setTargetSlow(newSlow);
+
+    if (estimate) {
+      if (Math.abs(estimate.fastH - targetFast) > 0.1) setTargetFast(estimate.fastH);
+      if (Math.abs(estimate.slowH - targetSlow) > 0.1) setTargetSlow(estimate.slowH);
     }
-  }, [vma, itraIndex, roadbook]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vma, itraIndex, roadbook, descentThreshold, fatiguePercent]);
 
   const addProduct = () => {
     setInventory([...inventory, { id: nextProdId, name: 'Nouveau Produit', carbs: 0, sodium: 0, caffeine: 0 }]);
@@ -306,7 +342,11 @@ export default function RoadbookEditor() {
   // D- lissé non cumulé explicitement dans le seg object final, on l'additionne
   const displayEleNeg = segments.length > 0 ? segments.reduce((acc, seg) => acc + seg.elevationNeg, 0) : roadbook.stats.elevation.neg;
 
-
+  // Temps total estimé depuis les segments
+  const totalFastMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationFastMs, 0) : 0;
+  const totalSlowMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationSlowMs, 0) : 0;
+  const fmtTotalFast = totalFastMs > 0 ? formatDuration(totalFastMs) : `${targetFast}h`;
+  const fmtTotalSlow = totalSlowMs > 0 ? formatDuration(totalSlowMs) : `${targetSlow}h`;
 
   return (
     <div className={styles.editorContainer}>
@@ -326,40 +366,39 @@ export default function RoadbookEditor() {
           </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <Link href={`/roadbook/${id}`} className="btn btn-secondary">
-            Tableau de marche
-          </Link>
-          <button onClick={saveRoadbook} disabled={saving} className="btn btn-primary">
-            {saving ? <Loader2 className="lucide-spin" size={18} /> : <Save size={18} />}
-            {saving ? "Sauvegarde..." : "Sauvegarder"}
-          </button>
-        </div>
       </header>
 
       <div className={styles.statsBar}>
         <div className={styles.statBox}>
-          <span>Distance Totale</span>
-          <strong>{displayDistance.toFixed(1)} km</strong>
+          <span>Distance</span>
+          <strong>{displayDistance.toFixed(1)}<small>km</small></strong>
         </div>
         <div className={styles.statBox}>
-          <span>Dénivelé +</span>
-          <strong style={{ color: 'var(--color-accent)' }}>+{displayElePos.toFixed(0)} m</strong>
+          <span>D+</span>
+          <strong style={{ color: 'var(--color-accent)' }}>+{displayElePos.toFixed(0)}<small>m</small></strong>
         </div>
         <div className={styles.statBox}>
-          <span>Dénivelé -</span>
-          <strong style={{ color: '#EF4444' }}>-{displayEleNeg.toFixed(0)} m</strong>
+          <span>D−</span>
+          <strong style={{ color: '#EF4444' }}>−{displayEleNeg.toFixed(0)}<small>m</small></strong>
         </div>
         <div className={styles.statBox}>
           <span>Points de contrôle</span>
           <strong>{waypoints.length}</strong>
         </div>
+        <div className={`${styles.statBox} ${styles.statBoxTime}`}>
+          <span>⚡ Temps estimé · rapide / lent</span>
+          <strong>
+            <span style={{ color: '#10B981' }}>{fmtTotalFast}</span>
+            <span className={styles.timeSep}>/</span>
+            <span style={{ color: '#F59E0B' }}>{fmtTotalSlow}</span>
+          </strong>
+        </div>
       </div>
 
       <div className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', padding: '24px' }}>
         {/* Profil Coureur */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '1rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', margin: 0 }}>🏃 Profil & Objectifs</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 className={styles.sectionTitle}>🏃 Profil & Objectifs</h3>
           
           <div style={{ display: 'flex', gap: '12px' }}>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
@@ -382,35 +421,109 @@ export default function RoadbookEditor() {
               <input type="number" step="0.5" className="input-field" value={Number.isNaN(targetSlow) ? "" : targetSlow} onChange={e => setTargetSlow(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
             </div>
           </div>
+
+          <div className={styles.paramGroup}>
+            <label className={styles.paramLabel}>Poids du coureur (kg)</label>
+            <input type="number" step="1" className="input-field" placeholder="Ex: 70" value={weight} onChange={e => setWeight(e.target.value)} style={{ width: '100%' }} />
+          </div>
         </div>
 
         {/* Course & Départ */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '1rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', margin: 0 }}>⏱️ Course & Forme</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 className={styles.sectionTitle}>⏱️ Course & Forme</h3>
           
           <div className={styles.paramGroup}>
             <label className={styles.paramLabel}>Date & Heure de départ</label>
             <input type="datetime-local" className="input-field" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ width: '100%' }} />
           </div>
 
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Fatigue Estimée (%)</label>
+              <input type="number" step="5" className="input-field" value={Number.isNaN(fatiguePercent) ? "" : fatiguePercent} onChange={e => setFatiguePercent(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+            </div>
+            
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Météo Prévue</label>
+              <select className="input-field" value={weather} onChange={e => setWeather(e.target.value)} style={{ width: '100%' }}>
+                <option value="froid">Froid (&lt; 10°C)</option>
+                <option value="modere">Modéré (10-20°C)</option>
+                <option value="chaud">Chaud (20-28°C)</option>
+                <option value="tres_chaud">Canicule (&gt; 28°C)</option>
+              </select>
+            </div>
+          </div>
+
           <div className={styles.paramGroup}>
-            <label className={styles.paramLabel}>Fatigue Estimée (%)</label>
-            <input type="number" step="5" className="input-field" value={Number.isNaN(fatiguePercent) ? "" : fatiguePercent} onChange={e => setFatiguePercent(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+            <label className={styles.paramLabel} title="Seuil de pente à partir duquel vous marchez plutôt que de courir. Défaut: 15% (traileur moyen). Diminuez si vous êtes bon descendeur, augmentez si vous marchez plus.">Seuil Marche / Course (%)</label>
+            <input
+              type="number" step="1" min="5" max="30"
+              className="input-field"
+              value={Number.isNaN(descentThreshold) ? "" : descentThreshold}
+              onChange={e => setDescentThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
+              style={{ width: '100%' }}
+            />
+            <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px'}}>
+              Seuil pente descente douce/raide (modèle Minetti). Défaut: 15%
+            </div>
           </div>
         </div>
 
         {/* Ajustements Organisateur */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '1rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', margin: 0 }}>📏 Données Organisateur</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 className={styles.sectionTitle}>📏 Données Organisateur</h3>
           
-          <div className={styles.paramGroup}>
-            <label className={styles.paramLabel}>Distance Officielle (km)</label>
-            <input type="number" step="0.1" className="input-field" placeholder="Ex: 42.5" value={officialDistance} onChange={e => setOfficialDistance(e.target.value)} style={{ width: '100%' }} />
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Distance Off. (km)</label>
+              <input type="number" step="0.1" className="input-field" placeholder="Ex: 42.5" value={officialDistance} onChange={e => setOfficialDistance(e.target.value)} style={{ width: '100%' }} />
+            </div>
+
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Dénivelé Pos. (m)</label>
+              <input type="number" step="10" className="input-field" placeholder="Ex: 2500" value={officialElevation} onChange={e => setOfficialElevation(e.target.value)} style={{ width: '100%' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Objectifs Nutritionnels */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 className={styles.sectionTitle}>🍎 Objectifs Nutritionnels</h3>
+          
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Glucides (g/h)</label>
+              <input type="number" step="5" className="input-field" value={carbTarget} onChange={e => setCarbTarget(e.target.value)} style={{ width: '100%' }} />
+              <div style={{fontSize: '0.7rem', color: '#10B981', marginTop: '4px'}}>
+                Conseil : 60-90 g/h
+              </div>
+            </div>
+
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Eau (ml/h)</label>
+              <input type="number" step="50" className="input-field" value={waterTarget} onChange={e => setWaterTarget(e.target.value)} style={{ width: '100%' }} />
+              <div style={{fontSize: '0.7rem', color: '#3B82F6', marginTop: '4px'}}>
+                Conseil : {weather === 'froid' ? '400-500' : weather === 'modere' ? '500-600' : weather === 'chaud' ? '600-800' : '800-1000'} ml/h
+              </div>
+            </div>
           </div>
 
-          <div className={styles.paramGroup}>
-            <label className={styles.paramLabel}>Dénivelé Positif (m)</label>
-            <input type="number" step="10" className="input-field" placeholder="Ex: 2500" value={officialElevation} onChange={e => setOfficialElevation(e.target.value)} style={{ width: '100%' }} />
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Sodium (mg/h)</label>
+              <input type="number" step="50" className="input-field" value={sodiumTarget} onChange={e => setSodiumTarget(e.target.value)} style={{ width: '100%' }} />
+              <div style={{fontSize: '0.7rem', color: '#F59E0B', marginTop: '4px'}}>
+                Conseil : {weather === 'froid' ? '300-400' : weather === 'modere' ? '400-500' : weather === 'chaud' ? '500-600' : '600-800'} mg/h
+              </div>
+            </div>
+
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Caféine (ponctuel)</label>
+              <input type="number" step="10" className="input-field" value={caffeineTarget} title="Dose cible par prise (en mg)" onChange={e => setCaffeineTarget(e.target.value)} style={{ width: '100%' }} />
+              <div style={{fontSize: '0.7rem', color: '#8B5CF6', marginTop: '4px'}}>
+                Conseil : {weight ? `~${Math.round(weight * 3)}-${Math.round(weight * 6)}mg max/course` : 'Prise de ~50mg en cas de coup de fatigue'}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -500,56 +613,26 @@ export default function RoadbookEditor() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {segments.map((seg, index) => {
+                const totalDurationFastMs = segments.slice(0, index + 1).reduce((acc, s) => acc + s.durationFastMs, 0);
+                const totalDurationSlowMs = segments.slice(0, index + 1).reduce((acc, s) => acc + s.durationSlowMs, 0);
                 
-                // Calcul des besoins nutritionnels jusqu'au prochain ravitaillement perso (Assistance ou Dropbag)
-                let accumulatedDurationSlowMs = seg.durationSlowMs;
-                let nextRestockIndex = -1;
-                
-                for (let j = index; j < segments.length; j++) {
-                  if (j > index) {
-                    accumulatedDurationSlowMs += segments[j].durationSlowMs;
-                  }
-                  
-                  if (segments[j].to.has_dropbag || segments[j].to.assistance_allowed || j === segments.length - 1) {
-                    nextRestockIndex = j;
-                    break;
-                  }
-                }
-                
-                // Calcul spécifique pour l'eau (n'importe quel point d'eau suffit)
-                let accumulatedWaterDurationSlowMs = seg.durationSlowMs;
-                let nextWaterRestockIndex = -1;
-                
-                for (let j = index; j < segments.length; j++) {
-                  if (j > index) {
-                    accumulatedWaterDurationSlowMs += segments[j].durationSlowMs;
-                  }
-                  
-                  const tType = segments[j].to.type;
-                  if (tType === 'water' || tType === 'full' || tType === 'base' || segments[j].to.has_dropbag || segments[j].to.assistance_allowed || j === segments.length - 1) {
-                    nextWaterRestockIndex = j;
-                    break;
-                  }
-                }
-                
-                const legDurationSlowHours = accumulatedDurationSlowMs / 3600000;
-                const waterLegDurationSlowHours = accumulatedWaterDurationSlowMs / 3600000;
+                // Calcul des besoins nutritionnels pour CE segment
                 const segmentDurationSlowHours = seg.durationSlowMs / 3600000;
                 
-                const nextRestockName = nextRestockIndex !== -1 ? segments[nextRestockIndex].to.name : "Arrivée";
-                const nextWaterRestockName = nextWaterRestockIndex !== -1 ? segments[nextWaterRestockIndex].to.name : "Arrivée";
+                const carbsNeeded = Math.round(segmentDurationSlowHours * (parseInt(carbTarget) || 0));
+                const sodiumNeeded = Math.round(segmentDurationSlowHours * (parseInt(sodiumTarget) || 0));
+                const waterNeeded = Math.round(segmentDurationSlowHours * (parseInt(waterTarget) || 0));
+                const caffeineNeeded = parseInt(caffeineTarget) || 0; // Usage ponctuel, pas par heure
                 
-                const carbsNeeded = Math.round(legDurationSlowHours * (parseInt(carbTarget) || 0));
-                const sodiumNeeded = Math.round(legDurationSlowHours * (parseInt(sodiumTarget) || 0));
-                const waterNeeded = Math.round(waterLegDurationSlowHours * (parseInt(waterTarget) || 0));
-                
-                const segmentCarbsNeeded = Math.round(segmentDurationSlowHours * (parseInt(carbTarget) || 0));
-                const segmentSodiumNeeded = Math.round(segmentDurationSlowHours * (parseInt(sodiumTarget) || 0));
-                const segmentWaterNeeded = Math.round(segmentDurationSlowHours * (parseInt(waterTarget) || 0));
+                const segmentCarbsNeeded = carbsNeeded;
+                const segmentSodiumNeeded = sodiumNeeded;
+                const segmentWaterNeeded = waterNeeded;
+                const segmentCaffeineNeeded = caffeineNeeded;
                 
                 let plannedCarbs = 0;
                 let plannedSodium = 0;
                 let plannedWater = 0;
+                let plannedCaffeine = 0;
                 
                 if (seg.to.planned_nutrition) {
                   Object.keys(seg.to.planned_nutrition).forEach(prodId => {
@@ -558,6 +641,7 @@ export default function RoadbookEditor() {
                      if (prod) {
                         plannedCarbs += (prod.carbs || 0) * qty;
                         plannedSodium += (prod.sodium || 0) * qty;
+                        plannedCaffeine += (prod.caffeine || 0) * qty;
                         
                         // Si le nom du produit contient "ml", on essaie d'extraire la quantité d'eau pour la jauge.
                         const mlMatch = prod.name.match(/(\d+)\s*ml/i);
@@ -598,15 +682,16 @@ export default function RoadbookEditor() {
                           )}
                         </h3>
                         <div className={styles.cumulBlock}>
-                          <span>🏃 {seg.cumulDistance.toFixed(1)} km</span>
-                          <span style={{ color: '#F59E0B' }}>⛰️ +{seg.cumulElevation.toFixed(0)}m</span>
+                          {(!displayLoaded || displayConfig.dist) && <span>🏃 {seg.cumulDistance.toFixed(1)} km</span>}
+                          {(!displayLoaded || displayConfig.elePos) && <span style={{ color: '#F59E0B' }}>⛰️ +{seg.cumulElevation.toFixed(0)}m</span>}
                         </div>
                       </div>
                       
-                      <div style={{display: 'flex', gap: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '8px'}}>
-                        <span>Dist: {seg.distance.toFixed(1)} km</span>
-                        <span>D+: +{seg.elevationPos.toFixed(0)}m</span>
-                        {!seg.to.id.startsWith("wp-end") && (
+                      <div style={{display: 'flex', gap: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '8px', flexWrap: 'wrap'}}>
+                        {(!displayLoaded || displayConfig.dist) && <span>Dist: {seg.distance.toFixed(1)} km</span>}
+                        {(!displayLoaded || displayConfig.elePos) && <span>D+: +{seg.elevationPos.toFixed(0)}m</span>}
+                        {(!displayLoaded || displayConfig.eleNeg) && <span style={{color: '#EF4444'}}>D-: -{Math.abs(seg.elevationNeg || 0).toFixed(0)}m</span>}
+                        {(!displayLoaded || displayConfig.cutoff) && !seg.to.id.startsWith("wp-end") && (
                           <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                             <Timer size={14}/> Barrière:
                             <input 
@@ -686,27 +771,45 @@ export default function RoadbookEditor() {
                     </div>
                     
                     <div style={{ padding: '16px', background: 'var(--background)', borderBottom: '1px solid var(--border-light)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                      <div style={{display: 'flex', flexDirection: 'column'}}>
-                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}><Clock size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Temps & Allure (Rapide / Lent)</span>
-                        <div style={{fontSize: '0.875rem', marginTop: '4px'}}>
-                          <span style={{fontWeight: 'bold', color: '#10B981'}}>{formatDuration(seg.durationFastMs)}</span> / <span style={{fontWeight: 'bold', color: '#F59E0B'}}>{formatDuration(seg.durationSlowMs)}</span>
-                          <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Allure Lent: {calculatePace(seg.durationSlowMs, seg.distance)} /km</div>
+                      {( (!displayLoaded) || displayConfig.timeInter || displayConfig.timeTotal || displayConfig.pace ) && (
+                        <div style={{display: 'flex', flexDirection: 'column'}}>
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}><Clock size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Temps (Rapide / Lent)</span>
+                          <div style={{fontSize: '0.875rem', marginTop: '4px'}}>
+                            {(!displayLoaded || displayConfig.timeInter) && (
+                              <div>
+                                <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Segment: </span>
+                                <span style={{fontWeight: 'bold', color: '#10B981'}}>{formatDuration(seg.durationFastMs)}</span> / <span style={{fontWeight: 'bold', color: '#F59E0B'}}>{formatDuration(seg.durationSlowMs)}</span>
+                              </div>
+                            )}
+                            {(!displayLoaded || displayConfig.timeTotal) && (
+                              <div style={{marginTop: '4px'}}>
+                                <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Cumul: </span>
+                                <span style={{fontWeight: 'bold', color: '#10B981'}}>{formatDuration(totalDurationFastMs)}</span> / <span style={{fontWeight: 'bold', color: '#F59E0B'}}>{formatDuration(totalDurationSlowMs)}</span>
+                              </div>
+                            )}
+                            {(!displayLoaded || displayConfig.pace) && (
+                              <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px'}}>Allure Lent: {calculatePace(seg.durationSlowMs, seg.distance)} /km</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div style={{display: 'flex', flexDirection: 'column'}}>
-                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}><Timer size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Heure de passage</span>
-                        <div style={{fontSize: '0.875rem', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px'}}>
-                          <span style={{color: '#10B981'}}>Rapide: {formatTime(departureTimeFast)} ➔ <strong>{formatTime(seg.arr_fast)}</strong></span>
-                          <span style={{color: '#F59E0B'}}>Lent: {formatTime(departureTimeSlow)} ➔ <strong>{formatTime(seg.arr_slow)}</strong></span>
+                      )}
+                      
+                      {( (!displayLoaded) || displayConfig.etaFast || displayConfig.etaSlow ) && (
+                        <div style={{display: 'flex', flexDirection: 'column'}}>
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}><Timer size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Heure de passage</span>
+                          <div style={{fontSize: '0.875rem', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px'}}>
+                            {(!displayLoaded || displayConfig.etaFast) && <span style={{color: '#10B981'}}>Rapide: {formatTime(departureTimeFast)} ➔ <strong>{formatTime(seg.arr_fast)}</strong></span>}
+                            {(!displayLoaded || displayConfig.etaSlow) && <span style={{color: '#F59E0B'}}>Lent: {formatTime(departureTimeSlow)} ➔ <strong>{formatTime(seg.arr_slow)}</strong></span>}
+                          </div>
                         </div>
-                      </div>
-                      <div style={{display: 'flex', flexDirection: 'column'}}>
-                        <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '8px' }}>
-                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}>
-                            <Activity size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Besoins (Solide: {nextRestockName} | Eau: {nextWaterRestockName})
-                          </span>
-                          <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>Ce segment uniquement : {segmentCarbsNeeded}g Gluc / {segmentSodiumNeeded}mg Sod / {segmentWaterNeeded}ml Eau</span>
-                        </div>
+                      )}
+                      {(!displayLoaded || displayConfig.nutrition) && (
+                        <div style={{display: 'flex', flexDirection: 'column'}}>
+                          <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '8px' }}>
+                            <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}>
+                              <Activity size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Besoins du segment
+                            </span>
+                          </div>
                         
                         {/* Nutrition Gauges */}
                         <div className={styles.nutriNeeded}>
@@ -723,7 +826,7 @@ export default function RoadbookEditor() {
                                 }} 
                               />
                             </div>
-                            <span className={styles.gaugeValue}>{plannedCarbs}/{carbsNeeded}g</span>
+                            <span className={styles.gaugeValue}>{round10(plannedCarbs)}/{round10(carbsNeeded)}g</span>
                           </div>
 
                           {/* Sodium */}
@@ -738,7 +841,7 @@ export default function RoadbookEditor() {
                                 }} 
                               />
                             </div>
-                            <span className={styles.gaugeValue}>{plannedSodium}/{sodiumNeeded}mg</span>
+                            <span className={styles.gaugeValue}>{round10(plannedSodium)}/{round10(sodiumNeeded)}mg</span>
                           </div>
 
                           {/* Eau */}
@@ -753,31 +856,78 @@ export default function RoadbookEditor() {
                                 }} 
                               />
                             </div>
-                            <span className={styles.gaugeValue}>{plannedWater}/{waterNeeded}ml</span>
+                            <span className={styles.gaugeValue}>{round10(plannedWater)}/{round10(waterNeeded)}ml</span>
                           </div>
+
+                          {/* Caféine (Affichée seulement si planifiée) */}
+                          {plannedCaffeine > 0 && (
+                            <div className={styles.gaugeContainer}>
+                              <span className={styles.gaugeLabel} title="Caféine"><Coffee size={12} style={{display: 'inline', color: '#8B5CF6', marginRight: '4px', verticalAlign: 'middle'}}/> Caf.</span>
+                              <div className={styles.gaugeTrack}>
+                                <div 
+                                  className={styles.gaugeFill} 
+                                  style={{
+                                    width: `${Math.min((plannedCaffeine / (caffeineNeeded || 1)) * 100, 100)}%`, 
+                                    backgroundColor: plannedCaffeine >= caffeineNeeded ? '#8B5CF6' : '#9CA3AF'
+                                  }} 
+                                />
+                              </div>
+                              <span className={styles.gaugeValue}>{round10(plannedCaffeine)}/{round10(caffeineNeeded)}mg</span>
+                            </div>
+                          )}
 
                         </div>
                       </div>
+                      )}
                     </div>
                     
-                    <div className={styles.nutritionBlock} style={{ borderBottom: '1px solid var(--border-light)', margin: 0, padding: '16px' }}>
-                      <h4>🍎 Nutrition à emporter depuis {seg.from.name}</h4>
-                      <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '-8px', marginBottom: '12px'}}>
-                        Vers {nextRestockName} ({legDurationSlowHours.toFixed(1)}h estimées) | Eau vers {nextWaterRestockName} ({waterLegDurationSlowHours.toFixed(1)}h estimées)
-                      </p>
-                      <div className={styles.nutriGrid}>
-                        {inventory.map(prod => (
-                          <div key={prod.id} className={styles.nutriItem}>
-                            <label>{prod.name}</label>
-                            <div className={styles.qtyControl}>
-                              <button onClick={() => handleWaypointNutritionChange(seg.to.id, prod.id, -1)} className={styles.qtyBtn}>-</button>
-                              <span className={styles.qtyInput}>{(seg.to.planned_nutrition && seg.to.planned_nutrition[prod.id]) || 0}</span>
-                              <button onClick={() => handleWaypointNutritionChange(seg.to.id, prod.id, 1)} className={styles.qtyBtn}>+</button>
+                    {(!displayLoaded || displayConfig.nutrition) && (
+                      <div className={styles.nutritionBlock} style={{ borderBottom: '1px solid var(--border-light)', margin: 0, padding: '16px' }}>
+                        <h4>🍎 Nutrition à emporter depuis {seg.from.name}</h4>
+                        <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '-8px', marginBottom: '12px'}}>
+                          Vers {seg.to.name} ({formatDuration(seg.durationSlowMs)} estimées)
+                        </p>
+                        <div className={styles.nutriGrid}>
+                          {inventory.map(prod => (
+                            <div key={prod.id} className={styles.nutriItem}>
+                              <label>{prod.name}</label>
+                              <div className={styles.qtyControl}>
+                                <button onClick={() => handleWaypointNutritionChange(seg.to.id, prod.id, -1)} className={styles.qtyBtn}>-</button>
+                                <span className={styles.qtyInput}>{(seg.to.planned_nutrition && seg.to.planned_nutrition[prod.id]) || 0}</span>
+                                <button onClick={() => handleWaypointNutritionChange(seg.to.id, prod.id, 1)} className={styles.qtyBtn}>+</button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {seg.to.assistance_allowed && (
+                      <div className={styles.assistanceBox}>
+                        <h4 style={{margin: '0 0 8px 0', fontSize: '0.875rem', color: '#27ae60'}}>🤝 Consignes Assistance ({seg.to.name})</h4>
+                        <textarea 
+                          value={seg.to.assistance_notes || ""} 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { assistance_notes: e.target.value })} 
+                          placeholder="Ex: Préparez les bâtons, changer de chaussettes..."
+                          className="input-field"
+                          style={{width: '100%', minHeight: '60px', padding: '8px'}}
+                        />
+                      </div>
+                    )}
+                    
+                    {seg.to.has_dropbag && (
+                      <div className={styles.dropbagBox}>
+                        <h4 style={{margin: '0 0 8px 0', fontSize: '0.875rem', color: '#8e44ad'}}>🎒 Contenu Sac d'Allègement</h4>
+                        <input 
+                          type="text" 
+                          value={seg.to.dropbag_items || ""} 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { dropbag_items: e.target.value })} 
+                          placeholder="Matériel de rechange, chaussures..."
+                          className="input-field"
+                          style={{width: '100%', padding: '8px'}}
+                        />
+                      </div>
+                    )}
 
                     <div style={{ padding: '16px', background: 'var(--surface-color)', borderBottom: '1px solid var(--border-light)' }}>
                       <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}>
@@ -825,11 +975,16 @@ export default function RoadbookEditor() {
                         {(seg.elevationPos / Math.max(1, seg.distance) > 80) && (
                           <span style={{background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>🦯 Sortir les bâtons</span>
                         )}
-                        {isNight && (
-                          <span style={{background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>🌙 Nuit (Frontale)</span>
+                        {seg.nightIntensity > 0.2 && (
+                          <span style={{background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>🌙 Nuit{seg.nightIntensity > 0.7 ? ' totale' : ' partielle'} (−{Math.round(seg.nightIntensity * 10)}%)</span>
                         )}
-                        {vamEst > 0 && (
-                          <span style={{background: 'rgba(139, 92, 246, 0.1)', color: '#8B5CF6', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>⛰️ VAM: {vamEst} m/h</span>
+                        {seg.weatherCoeff < 1 && (
+                          <span style={{background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>
+                            {weather === 'tres_chaud' ? '🥵' : weather === 'chaud' ? '☀️' : '🥶'} Météo (−{Math.round((1 - seg.weatherCoeff) * 100)}%)
+                          </span>
+                        )}
+                        {(!displayLoaded || displayConfig.vam) && seg.vamEstimate > 0 && (
+                          <span style={{background: 'rgba(139, 92, 246, 0.1)', color: '#8B5CF6', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>⛰️ VAM: {seg.vamEstimate} m/h</span>
                         )}
                       </div>
                     </div>
@@ -839,33 +994,6 @@ export default function RoadbookEditor() {
                       <div style={{fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '8px'}}>Profil du segment</div>
                       <SegmentElevationProfile points={seg.points} baseCumulDist={seg.cumulDistance - seg.distance} distanceFactor={currentDistFactor} />
                     </div>
-                    
-                    {seg.to.assistance_allowed && (
-                      <div className={styles.assistanceBox}>
-                        <h4 style={{margin: '0 0 8px 0', fontSize: '0.875rem', color: '#27ae60'}}>🤝 Consignes Assistance ({seg.to.name})</h4>
-                        <textarea 
-                          value={seg.to.assistance_notes || ""} 
-                          onChange={e => handleUpdateWaypoint(seg.to.id, { assistance_notes: e.target.value })} 
-                          placeholder="Ex: Préparez les bâtons, changer de chaussettes..."
-                          className="input-field"
-                          style={{width: '100%', minHeight: '60px', padding: '8px'}}
-                        />
-                      </div>
-                    )}
-                    
-                    {seg.to.has_dropbag && (
-                      <div className={styles.dropbagBox}>
-                        <h4 style={{margin: '0 0 8px 0', fontSize: '0.875rem', color: '#8e44ad'}}>🎒 Contenu Sac d'Allègement</h4>
-                        <input 
-                          type="text" 
-                          value={seg.to.dropbag_items || ""} 
-                          onChange={e => handleUpdateWaypoint(seg.to.id, { dropbag_items: e.target.value })} 
-                          placeholder="Matériel de rechange, chaussures..."
-                          className="input-field"
-                          style={{width: '100%', padding: '8px'}}
-                        />
-                      </div>
-                    )}
 
                   </div>
                 );
@@ -873,7 +1001,7 @@ export default function RoadbookEditor() {
               {segments.length === 0 && <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Aucun segment calculé</div>}
             </div>
           </div>
-        </main>
+        </div>
       </div>
     </div>
   );

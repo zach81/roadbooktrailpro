@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { LogOut, User, Map } from 'lucide-react';
+import { useNavbarActions } from '@/context/NavbarActionsContext';
+import { LogOut, User, Map, HelpCircle } from 'lucide-react';
 import styles from './Navbar.module.css';
 
 export default function Navbar() {
   const { currentUser, logout } = useAuth();
+  const { actions } = useNavbarActions();
 
   const handleLogout = async () => {
     try {
@@ -20,15 +22,24 @@ export default function Navbar() {
     <nav className={styles.navbar}>
       <div className={`container ${styles.navContainer}`}>
         <Link href="/" className={styles.logo}>
-          <Map className={styles.logoIcon} />
-          <span>TrailRoadbookPro</span>
+          <Map size={22} className={styles.logoIcon} />
+          <span className={styles.logoText}>mykairn</span>
         </Link>
+
+        {/* Slot d'actions injecté par les pages */}
+        {actions && (
+          <div className={styles.pageActions}>
+            {actions}
+          </div>
+        )}
         
         <div className={styles.navLinks}>
           {currentUser ? (
             <>
-              <Link href="/dashboard" className={styles.link}>Dashboard</Link>
               <div className={styles.userMenu}>
+                <Link href="/help" className={styles.helpLink} title="Guide & Aide">
+                  <HelpCircle size={18} />
+                </Link>
                 <span className={styles.userEmail}>
                   <User size={16} />
                   {currentUser.email}
