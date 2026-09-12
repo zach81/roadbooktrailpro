@@ -57,7 +57,7 @@ export default function Dashboard() {
       const gpxText = await readFileAsText(file);
       
       console.log("3. Analyse du GPX...");
-      const { stats, points, waypoints } = parseGPX(gpxText);
+      const { stats, points, waypoints } = await parseGPX(gpxText);
       console.log("   - Stats:", stats);
       console.log("   - Points extraits:", points.length);
 
@@ -92,7 +92,7 @@ export default function Dashboard() {
       if (!response.ok) throw new Error("Fichier introuvable");
       const gpxText = await response.text();
       
-      const { stats, points, waypoints } = parseGPX(gpxText);
+      const { stats, points, waypoints } = await parseGPX(gpxText);
       
       const docRef = await addDoc(collection(db, "roadbooks"), {
         userId: currentUser.uid,

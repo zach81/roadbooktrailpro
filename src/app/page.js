@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { ArrowRight, Mountain, Route, Watch, CheckCircle2, Zap, Target } from "lucide-react";
+// import { ArrowRight, Mountain, Route, Watch, CheckCircle2, Zap, Target } from "lucide-react";
+const ArrowRight = () => null;
+const Mountain = () => null;
+const Route = () => null;
+const Watch = () => null;
+const CheckCircle2 = () => null;
+const Zap = () => null;
+const Target = () => null;
 import Image from "next/image";
 import styles from "./page.module.css";
 

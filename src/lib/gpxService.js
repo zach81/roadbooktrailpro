@@ -1,12 +1,13 @@
-import GPXParser from 'gpxparser';
 import { calculateTraceStats } from './roadbookCalculator';
 
 /**
  * Parse un fichier GPX et extrait les données globales et les points.
  * @param {string} gpxText Le contenu du fichier GPX sous forme de chaîne de caractères
- * @returns {Object} Les statistiques et les points extraits
+ * @returns {Promise<Object>} Les statistiques et les points extraits
  */
-export function parseGPX(gpxText) {
+export async function parseGPX(gpxText) {
+  const GPXParserModule = await import('gpxparser');
+  const GPXParser = GPXParserModule.default || GPXParserModule;
   const gpx = new GPXParser();
   gpx.parse(gpxText);
 

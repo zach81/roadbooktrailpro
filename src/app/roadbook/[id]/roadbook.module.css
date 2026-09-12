@@ -175,10 +175,7 @@
     border: 1px solid #ddd;
     break-inside: avoid;
   }
-  body {
-    background-color: white;
-    color: black;
-  }
+
   .badgeAssistance {
     border: 1px solid #10B981;
     background: transparent;
