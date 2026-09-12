@@ -63,14 +63,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      // TEMPORAIRE : On simule un utilisateur connecté pour pouvoir tester l'upload GPX
-      const mockUser = { 
-        uid: "test-user-123", 
-        email: "test@example.com", 
-        displayName: "Testeur" 
-      };
-      
-      setCurrentUser(user || mockUser);
+      setCurrentUser(user);
       setLoading(false);
     });
 
@@ -79,6 +72,7 @@ export function AuthProvider({ children }) {
 
   const value = {
     currentUser,
+    loading,
     signup,
     login,
     loginWithGoogle,

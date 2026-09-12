@@ -22,7 +22,8 @@ export default function Login() {
       await login(email, password);
       router.push("/dashboard");
     } catch (err) {
-      setError("Échec de la connexion. Vérifiez vos identifiants.");
+      console.error("Email login error:", err);
+      setError("Échec de la connexion. Vérifiez vos identifiants: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -35,7 +36,8 @@ export default function Login() {
       await loginWithGoogle();
       router.push("/dashboard");
     } catch (err) {
-      setError("Échec de la connexion avec Google.");
+      console.error("Google sign-in error:", err);
+      setError("Échec de la connexion avec Google: " + err.message);
     } finally {
       setLoading(false);
     }

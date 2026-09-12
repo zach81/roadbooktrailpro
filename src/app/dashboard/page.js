@@ -11,7 +11,7 @@ import { officialRaces } from "@/data/officialRaces";
 import styles from "./dashboard.module.css";
 
 export default function Dashboard() {
-  const { currentUser } = useAuth();
+  const { currentUser, loading: authLoading } = useAuth();
   const router = useRouter();
   const [roadbooks, setRoadbooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +21,8 @@ export default function Dashboard() {
   const [showOfficialModal, setShowOfficialModal] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
+    
     if (!currentUser) {
       router.push("/login");
       return;
@@ -43,7 +45,7 @@ export default function Dashboard() {
     }
 
     fetchRoadbooks();
-  }, [currentUser, router]);
+  }, [currentUser, authLoading, router]);
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -152,7 +154,7 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <div className={styles.loader}>Chargement...</div>;
+  if (authLoading || loading) return <div className={styles.loader}>Chargement...</div>;
 
   return (
     <div className={styles.dashboardContainer}>

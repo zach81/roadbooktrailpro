@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useNavbarActions } from '@/context/NavbarActionsContext';
 import { LogOut, User, Map, HelpCircle } from 'lucide-react';
@@ -10,11 +11,16 @@ export default function Navbar() {
   const { currentUser, logout } = useAuth();
   const { actions } = useNavbarActions();
 
+  const router = useRouter();
+
   const handleLogout = async () => {
+    console.log("Tentative de déconnexion...");
     try {
       await logout();
+      console.log("Déconnexion réussie sur Firebase. Redirection...");
+      router.push("/");
     } catch (error) {
-      console.error("Erreur de déconnexion", error);
+      console.error("Erreur de déconnexion:", error);
     }
   };
 
