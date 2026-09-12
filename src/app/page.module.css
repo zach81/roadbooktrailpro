@@ -1,0 +1,338 @@
+.homeWrapper {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Background Gradients */
+.bgGlow1, .bgGlow2 {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  z-index: -1;
+  opacity: 0.15;
+}
+
+.bgGlow1 {
+  top: -10%;
+  left: -5%;
+  width: 500px;
+  height: 500px;
+  background: var(--color-primary);
+}
+
+.bgGlow2 {
+  top: 30%;
+  right: -10%;
+  width: 600px;
+  height: 600px;
+  background: var(--color-accent);
+}
+
+/* Hero Section */
+.heroSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 0 2rem;
+  text-align: center;
+  gap: 3rem;
+  min-height: 80vh;
+}
+
+.heroContent {
+  max-width: 800px;
+  animation: fadeUp 0.8s ease-out;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background-color: rgba(255, 90, 54, 0.1);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 90, 54, 0.2);
+}
+
+.title {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  margin-bottom: 24px;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.highlight {
+  color: var(--color-primary);
+  position: relative;
+  display: inline-block;
+}
+
+.highlight::after {
+  content: '';
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  width: 100%;
+  height: 12px;
+  background-color: rgba(255, 90, 54, 0.2);
+  z-index: -1;
+  border-radius: 4px;
+}
+
+.subtitle {
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  margin-bottom: 40px;
+  max-width: 650px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.ctaGroup {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.mainCta {
+  padding: 14px 28px;
+  font-size: 1.1rem;
+}
+
+.trusted p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Mockup */
+.heroImageWrapper {
+  width: 100%;
+  max-width: 1000px;
+  perspective: 1000px;
+  animation: fadeUp 1s ease-out 0.2s both;
+}
+
+.mockupContainer {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--border-subtle);
+  transform: rotateX(5deg) scale(0.95);
+  transition: transform 0.5s ease;
+  background: var(--bg-surface);
+  line-height: 0;
+}
+
+.mockupContainer:hover {
+  transform: rotateX(0) scale(1);
+}
+
+.mockupImage {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+/* Section Common */
+.sectionTitle {
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+/* How It Works */
+.howItWorks {
+  padding: 6rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.stepsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 32px;
+}
+
+.stepCard {
+  background: var(--bg-surface);
+  padding: 32px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  transition: transform var(--transition-normal);
+}
+
+.stepCard:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-md);
+}
+
+.stepNumber {
+  width: 48px;
+  height: 48px;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  margin-bottom: 24px;
+}
+
+.stepCard h3 {
+  font-size: 1.3rem;
+  margin-bottom: 12px;
+}
+
+.stepCard p {
+  color: var(--text-secondary);
+}
+
+/* Features */
+.featuresSection {
+  padding: 6rem 0;
+}
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 24px;
+}
+
+.featureCard {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all var(--transition-normal);
+}
+
+@media (prefers-color-scheme: dark) {
+  .featureCard {
+    background: rgba(26, 29, 31, 0.4);
+  }
+}
+
+.featureCard:hover {
+  transform: translateY(-8px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-primary);
+}
+
+.iconWrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, rgba(255, 90, 54, 0.2), rgba(255, 90, 54, 0.05));
+  color: var(--color-primary);
+  border-radius: 16px;
+  margin-bottom: 24px;
+}
+
+.featureCard h3 {
+  font-size: 1.25rem;
+  margin-bottom: 12px;
+}
+
+.featureCard p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+/* Final CTA */
+.finalCta {
+  padding: 4rem 0 6rem;
+}
+
+.ctaCard {
+  background: linear-gradient(135deg, var(--bg-surface-elevated), var(--bg-surface));
+  border-radius: var(--radius-lg);
+  padding: 4rem 2rem;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.ctaCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+}
+
+.ctaCard h2 {
+  font-size: 2.5rem;
+  margin-bottom: 16px;
+}
+
+.ctaCard p {
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+}
+
+.ctaChecklist {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+  list-style: none;
+  margin-bottom: 40px;
+}
+
+.ctaChecklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ctaChecklist li svg {
+  color: var(--color-accent);
+}
+
+.hugeCta {
+  padding: 16px 32px;
+  font-size: 1.2rem;
+}
+
+/* Animations */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .ctaGroup {
+    flex-direction: column;
+  }
+  
+  .ctaChecklist {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+}

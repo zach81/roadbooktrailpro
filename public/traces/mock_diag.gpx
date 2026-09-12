@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TrailRoadbookPro Mock" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Mock Diagonale Track</name>
+  </metadata>
+  <trk>
+    <name>Mock Diagonale</name>
+    <trkseg>
+      <trkpt lat="-21.3" lon="55.4"><ele>0</ele></trkpt>
+      <trkpt lat="-21.2" lon="55.5"><ele>2000</ele></trkpt>
+      <trkpt lat="-21.1" lon="55.4"><ele>1500</ele></trkpt>
+      <trkpt lat="-21.0" lon="55.3"><ele>50</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

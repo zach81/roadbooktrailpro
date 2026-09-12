@@ -1,0 +1,431 @@
+.editorContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.editorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.tabsContainer {
+  display: flex;
+  gap: 8px;
+  background-color: var(--bg-surface-elevated);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+}
+
+.tab {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.activeTab {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.titleSection {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.titleSection h1 {
+  font-size: 1.75rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.statsBar {
+  display: flex;
+  gap: 16px;
+  background-color: var(--bg-surface);
+  padding: 16px 24px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.statBox {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 120px;
+}
+
+.statBox span {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.statBox strong {
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.globalParamsBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  background-color: var(--bg-surface);
+  padding: 16px 24px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-subtle);
+  align-items: flex-end;
+}
+
+.paramGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.paramLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.mainColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.mapProfileGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .mapProfileGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.mapLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 400px;
+  background-color: var(--bg-surface-elevated);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Card specific styles */
+.segmentCard {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.segmentHeader {
+  border-bottom: 2px solid var(--color-primary);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.segmentTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.segmentTitle h3 {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 1.25rem;
+}
+
+.cumulBlock {
+  background: var(--bg-surface-elevated);
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: flex;
+  gap: 12px;
+}
+
+.interactiveForm {
+  display: flex;
+  gap: 24px;
+  background: var(--bg-surface-elevated);
+  padding: 20px 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  align-items: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 120px;
+}
+
+.formGroup label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.formGroup select,
+.formGroup input[type="number"] {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.formGroup select:focus,
+.formGroup input[type="number"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.checkboxesContainer {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-left: auto; /* push to the right if there is space */
+}
+
+.checkboxGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.checkboxGroup:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-light);
+}
+
+.checkboxGroup input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.checkboxGroup span {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nutriNeeded {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.gaugeContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gaugeLabel {
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.gaugeTrack {
+  flex-grow: 1;
+  height: 8px;
+  background: var(--bg-body);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.gaugeFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.gaugeValue {
+  width: 45px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nutritionBlock {
+  background: #fef9e7;
+  border: 1px solid #f1c40f;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.nutritionBlock h4 {
+  margin: 0 0 12px 0;
+  color: #b7950b;
+  font-size: 0.875rem;
+}
+
+.nutriGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.nutriItem {
+  background: white;
+  padding: 8px 12px;
+  border: 1px solid #f1c40f;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.qtyControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qtyBtn {
+  background: #f1c40f;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qtyBtn:hover {
+  background: #d4ac0d;
+}
+
+.qtyInput {
+  width: 30px;
+  text-align: center;
+  border: none;
+  background: var(--bg-surface-elevated);
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.assistanceBox {
+  border: 2px dashed #2ecc71;
+  background: #eafaf1;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.dropbagBox {
+  border: 2px solid #9b59b6;
+  background: #f5eef8;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.inventorySettings {
+  background: #fdf2e9;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 24px;
+  border: 2px solid #e67e22;
+}
+.inventorySettings h3 {
+  color: #d35400;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+.invTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+.invTable th {
+  background: #e67e22;
+  color: white;
+  padding: 8px;
+  text-align: left;
+  font-size: 0.875rem;
+}
+.invTable td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-light);
+}

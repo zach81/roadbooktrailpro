@@ -1,0 +1,880 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter, useParams } from "next/navigation";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import dynamic from 'next/dynamic';
+import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2 } from "lucide-react";
+import Link from "next/link";
+import styles from "./editor.module.css";
+import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold } from "@/lib/roadbookCalculator";
+import ElevationProfile from '@/components/ElevationProfile';
+import SegmentElevationProfile from '@/components/SegmentElevationProfile';
+// Dynamic import for Leaflet Map to avoid SSR issues
+const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
+  ssr: false,
+  loading: () => <div className={styles.mapLoading}><Loader2 className="lucide-spin" size={32} /> Chargement de la carte...</div>
+});
+
+export default function RoadbookEditor() {
+  const { currentUser } = useAuth();
+  const router = useRouter();
+  const params = useParams();
+  const { id } = params;
+
+  const [roadbook, setRoadbook] = useState(null);
+  const [points, setPoints] = useState([]);
+  const [waypoints, setWaypoints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editName, setEditName] = useState("");
+  
+  const [targetFast, setTargetFast] = useState(28);
+  const [targetSlow, setTargetSlow] = useState(35);
+  const [fatiguePercent, setFatiguePercent] = useState(15);
+  const [startTime, setStartTime] = useState("");
+  const [officialDistance, setOfficialDistance] = useState("");
+  const [officialElevation, setOfficialElevation] = useState("");
+  const [itraIndex, setItraIndex] = useState("");
+  const [vma, setVma] = useState("");
+  const [carbTarget, setCarbTarget] = useState("60");
+  const [sodiumTarget, setSodiumTarget] = useState("400");
+  const [waterTarget, setWaterTarget] = useState("500");
+  const [segments, setSegments] = useState([]);
+  const [inventory, setInventory] = useState([
+    { id: 1, name: 'Gel Classique', carbs: 25, sodium: 50, caffeine: 0 },
+    { id: 2, name: 'Gel Caféine', carbs: 25, sodium: 50, caffeine: 50 },
+    { id: 3, name: 'Flasque Iso 500ml', carbs: 30, sodium: 300, caffeine: 0 }
+  ]);
+  const [nextProdId, setNextProdId] = useState(4);
+  const [newWpKm, setNewWpKm] = useState("");
+  const [newWpName, setNewWpName] = useState("");
+  const [newWpType, setNewWpType] = useState("point");
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+
+  useEffect(() => {
+    if (points.length > 0) {
+      const enrichedWp = enrichWaypointsWithStartEnd(waypoints, points);
+      
+      const rawStats = calculateTraceStats(points, 7, 1);
+      const distFactor = (officialDistance && parseFloat(officialDistance) > 0 && rawStats.distance > 0) ? (parseFloat(officialDistance) / rawStats.distance) : 1;
+      const optThreshold = (officialElevation && parseFloat(officialElevation) > 0) ? findOptimalElevationThreshold(points, parseFloat(officialElevation)) : 5;
+      
+      const newSegments = generateSegments(points, enrichedWp, targetFast, targetSlow, fatiguePercent, startTime, optThreshold, distFactor);
+      setSegments(newSegments);
+    }
+  }, [points, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation]);
+
+  const formatTime = (isoString) => {
+    if (!isoString) return "--:--";
+    return new Date(isoString).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  };
+
+  const formatDuration = (ms) => {
+    const totalMinutes = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return `${minutes}min`;
+    return `${hours}h${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const calculatePace = (durationMs, distanceKm) => {
+    if (distanceKm === 0) return "0:00";
+    const minutes = durationMs / 60000;
+    const paceMinutes = minutes / distanceKm;
+    const mins = Math.floor(paceMinutes);
+    const secs = Math.round((paceMinutes - mins) * 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    async function fetchData() {
+      try {
+        const docRef = doc(db, "roadbooks", id);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists() && docSnap.data().userId === currentUser.uid) {
+          const data = docSnap.data();
+          setRoadbook(data);
+          setEditName(data.name || "");
+          setPoints(JSON.parse(data.points || "[]"));
+          
+          if (data.targetFast) setTargetFast(data.targetFast);
+          if (data.targetSlow) setTargetSlow(data.targetSlow);
+          if (data.fatiguePercent !== undefined) setFatiguePercent(data.fatiguePercent);
+          if (data.startTime) setStartTime(data.startTime);
+          if (data.officialDistance !== undefined) setOfficialDistance(data.officialDistance.toString());
+          if (data.officialElevation !== undefined) setOfficialElevation(data.officialElevation.toString());
+          if (data.carbTarget !== undefined) setCarbTarget(data.carbTarget.toString());
+          if (data.sodiumTarget !== undefined) setSodiumTarget(data.sodiumTarget.toString());
+          if (data.waterTarget !== undefined) setWaterTarget(data.waterTarget.toString());
+          if (data.itraIndex) setItraIndex(data.itraIndex);
+          if (data.vma) setVma(data.vma);
+          if (data.inventory) {
+            const inv = JSON.parse(data.inventory);
+            setInventory(inv);
+            if (inv.length > 0) setNextProdId(Math.max(...inv.map(p => p.id)) + 1);
+          }
+          
+          // Generate IDs for waypoints if they don't have one
+          const parsedWp = JSON.parse(data.waypoints || "[]").map((wp, i) => ({
+            ...wp,
+            id: wp.id || `wp-${i}-${Date.now()}`
+          }));
+          setWaypoints(parsedWp);
+        } else {
+          router.push("/dashboard");
+        }
+      } catch (err) {
+        console.error("Erreur de chargement", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [id, currentUser, router]);
+
+  const autoSaveWaypoints = async (newWaypoints) => {
+    try {
+      setSaving(true);
+      const docRef = doc(db, "roadbooks", id);
+      await updateDoc(docRef, {
+        waypoints: JSON.stringify(newWaypoints),
+      });
+    } catch (err) {
+      console.error("Erreur auto-save", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddWaypoint = (newWp) => {
+    const updated = [...waypoints, newWp];
+    setWaypoints(updated);
+    autoSaveWaypoints(updated);
+  };
+
+  const handleUpdateWaypoint = (idToUpdate, updates) => {
+    const updated = waypoints.map(w => w.id === idToUpdate ? { ...w, ...updates } : w);
+    setWaypoints(updated);
+    autoSaveWaypoints(updated);
+  };
+
+  const handleRemoveWaypoint = (idToRemove) => {
+    const updated = waypoints.filter((w) => w.id !== idToRemove);
+    setWaypoints(updated);
+    autoSaveWaypoints(updated);
+  };
+
+  const handleAddWaypointByKm = () => {
+    const dist = parseFloat(newWpKm);
+    if (isNaN(dist) || dist < 0) return alert("Distance invalide");
+    
+    addWaypointAtDistance(dist, newWpName.trim(), newWpType);
+    setNewWpKm("");
+    setNewWpName("");
+    setNewWpType("point");
+  };
+
+  const addWaypointAtDistance = (dist, customName = "", customType = "point") => {
+    const finalName = customName || `R${waypoints.length + 1}`;
+    
+    const point = findPointByDistance(dist, points);
+    if (point) {
+      handleAddWaypoint({
+        id: `wp-manual-${Date.now()}`,
+        name: finalName,
+        lat: point.lat,
+        lon: point.lon,
+        ele: point.ele,
+        type: customType,
+      });
+    }
+  };
+
+  const handleHoverDistance = (dist) => {
+    if (dist === null) {
+      setHoveredPoint(null);
+    } else {
+      const p = findPointByDistance(dist, points);
+      if (p) setHoveredPoint(p);
+    }
+  };
+
+  const saveRoadbook = async () => {
+    try {
+      setSaving(true);
+      const docRef = doc(db, "roadbooks", id);
+      await updateDoc(docRef, {
+        name: editName,
+        waypoints: JSON.stringify(waypoints),
+        targetFast: targetFast,
+        targetSlow: targetSlow,
+        fatiguePercent: fatiguePercent,
+        startTime: startTime,
+        officialDistance: parseFloat(officialDistance) || 0,
+        officialElevation: parseFloat(officialElevation) || 0,
+        carbTarget: parseInt(carbTarget) || 0,
+        sodiumTarget: parseInt(sodiumTarget) || 0,
+        waterTarget: parseInt(waterTarget) || 0,
+        itraIndex: itraIndex,
+        vma: vma,
+        inventory: JSON.stringify(inventory),
+      });
+      alert("Sauvegardé avec succès !");
+    } catch (err) {
+      console.error("Erreur de sauvegarde", err);
+      alert("Erreur lors de la sauvegarde.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!roadbook || (!vma && !itraIndex)) return;
+    
+    let baseSpeed = 0;
+    
+    // Total km-effort de la trace
+    const totalDist = roadbook.stats?.distance || 0;
+    const totalEle = roadbook.stats?.elevation?.pos || 0;
+    const kmEffort = totalDist + (totalEle / 100);
+    
+    if (vma && !isNaN(parseFloat(vma))) {
+      baseSpeed = parseFloat(vma) * 0.55;
+    } else if (itraIndex && !isNaN(parseInt(itraIndex))) {
+      const index = parseInt(itraIndex);
+      if (index > 0 && index <= 1000) {
+        baseSpeed = (index / 1000) * 16;
+      }
+    }
+    
+    if (baseSpeed > 0) {
+      const fatigueMultiplier = 1 + (kmEffort / 10) * 0.005; 
+      const estimatedTime = (kmEffort / baseSpeed) * fatigueMultiplier;
+      
+      const newFast = Math.round(estimatedTime * 10) / 10;
+      const newSlow = Math.round(estimatedTime * 1.2 * 10) / 10;
+      
+      if (Math.abs(newFast - targetFast) > 0.1) setTargetFast(newFast);
+      if (Math.abs(newSlow - targetSlow) > 0.1) setTargetSlow(newSlow);
+    }
+  }, [vma, itraIndex, roadbook]);
+
+  const addProduct = () => {
+    setInventory([...inventory, { id: nextProdId, name: 'Nouveau Produit', carbs: 0, sodium: 0, caffeine: 0 }]);
+    setNextProdId(nextProdId + 1);
+  };
+  const removeProduct = (idToRemove) => {
+    setInventory(inventory.filter(p => p.id !== idToRemove));
+  };
+  const updateProduct = (idToUpdate, field, value) => {
+    setInventory(inventory.map(p => p.id === idToUpdate ? { ...p, [field]: value } : p));
+  };
+  
+  const handleWaypointNutritionChange = (wpId, prodId, delta) => {
+    const wp = waypoints.find(w => w.id === wpId);
+    if (!wp) return;
+    const currentNutri = wp.planned_nutrition || {};
+    let newQty = (currentNutri[prodId] || 0) + delta;
+    if (newQty < 0) newQty = 0;
+    
+    handleUpdateWaypoint(wpId, { 
+      planned_nutrition: { ...currentNutri, [prodId]: newQty } 
+    });
+  };
+
+  if (loading) return <div className="container" style={{paddingTop: '2rem'}}>Chargement de l'éditeur...</div>;
+  if (!roadbook) return null;
+
+  const baseLat = points && points.length > 0 ? points[0].lat : 45.9;
+  const baseLon = points && points.length > 0 ? points[0].lon : 6.8;
+
+  const rawStats = points.length > 0 ? calculateTraceStats(points, 7, 1) : { distance: 1 };
+  const currentDistFactor = (officialDistance && parseFloat(officialDistance) > 0 && rawStats.distance > 0) ? (parseFloat(officialDistance) / rawStats.distance) : 1;
+
+  // Calcul dynamique des stats totales pour correspondre exactement aux segments (et corriger d'anciens roadbooks)
+  const displayDistance = segments.length > 0 ? segments[segments.length - 1].cumulDistance : roadbook.stats.distance;
+  const displayElePos = segments.length > 0 ? segments[segments.length - 1].cumulElevation : roadbook.stats.elevation.pos;
+  
+  // D- lissé non cumulé explicitement dans le seg object final, on l'additionne
+  const displayEleNeg = segments.length > 0 ? segments.reduce((acc, seg) => acc + seg.elevationNeg, 0) : roadbook.stats.elevation.neg;
+
+
+
+  return (
+    <div className={styles.editorContainer}>
+      <header className={styles.editorHeader}>
+        <div className={styles.titleSection}>
+          <Link href="/dashboard" className="btn btn-secondary" style={{ padding: '8px', borderRadius: '50%' }}>
+            <ArrowLeft size={20} />
+          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input 
+              type="text" 
+              value={editName} 
+              onChange={e => setEditName(e.target.value)} 
+              style={{ fontSize: '1.5rem', fontWeight: 'bold', border: 'none', background: 'transparent', color: 'var(--text-primary)', borderBottom: '1px dashed var(--border-light)', outline: 'none', width: 'auto', minWidth: '200px' }} 
+            />
+            <Edit2 size={16} style={{ color: 'var(--text-secondary)' }} />
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <Link href={`/roadbook/${id}`} className="btn btn-secondary">
+            Tableau de marche
+          </Link>
+          <button onClick={saveRoadbook} disabled={saving} className="btn btn-primary">
+            {saving ? <Loader2 className="lucide-spin" size={18} /> : <Save size={18} />}
+            {saving ? "Sauvegarde..." : "Sauvegarder"}
+          </button>
+        </div>
+      </header>
+
+      <div className={styles.statsBar}>
+        <div className={styles.statBox}>
+          <span>Distance Totale</span>
+          <strong>{displayDistance.toFixed(1)} km</strong>
+        </div>
+        <div className={styles.statBox}>
+          <span>Dénivelé +</span>
+          <strong style={{ color: 'var(--color-accent)' }}>+{displayElePos.toFixed(0)} m</strong>
+        </div>
+        <div className={styles.statBox}>
+          <span>Dénivelé -</span>
+          <strong style={{ color: '#EF4444' }}>-{displayEleNeg.toFixed(0)} m</strong>
+        </div>
+        <div className={styles.statBox}>
+          <span>Points de contrôle</span>
+          <strong>{waypoints.length}</strong>
+        </div>
+      </div>
+
+      <div className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', padding: '24px' }}>
+        {/* Profil Coureur */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '1rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', margin: 0 }}>🏃 Profil & Objectifs</h3>
+          
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Index ITRA</label>
+              <input type="number" className="input-field" placeholder="Ex: 500" value={itraIndex} onChange={e => { setItraIndex(e.target.value); setVma(""); }} style={{ width: '100%' }} />
+            </div>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>VMA (km/h)</label>
+              <input type="number" className="input-field" placeholder="Ex: 15" value={vma} onChange={e => { setVma(e.target.value); setItraIndex(""); }} style={{ width: '100%' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Obj. Rapide (h)</label>
+              <input type="number" step="0.5" className="input-field" value={Number.isNaN(targetFast) ? "" : targetFast} onChange={e => setTargetFast(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+            </div>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+              <label className={styles.paramLabel}>Obj. Lent (h)</label>
+              <input type="number" step="0.5" className="input-field" value={Number.isNaN(targetSlow) ? "" : targetSlow} onChange={e => setTargetSlow(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Course & Départ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '1rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', margin: 0 }}>⏱️ Course & Forme</h3>
+          
+          <div className={styles.paramGroup}>
+            <label className={styles.paramLabel}>Date & Heure de départ</label>
+            <input type="datetime-local" className="input-field" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ width: '100%' }} />
+          </div>
+
+          <div className={styles.paramGroup}>
+            <label className={styles.paramLabel}>Fatigue Estimée (%)</label>
+            <input type="number" step="5" className="input-field" value={Number.isNaN(fatiguePercent) ? "" : fatiguePercent} onChange={e => setFatiguePercent(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+          </div>
+        </div>
+
+        {/* Ajustements Organisateur */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '1rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', margin: 0 }}>📏 Données Organisateur</h3>
+          
+          <div className={styles.paramGroup}>
+            <label className={styles.paramLabel}>Distance Officielle (km)</label>
+            <input type="number" step="0.1" className="input-field" placeholder="Ex: 42.5" value={officialDistance} onChange={e => setOfficialDistance(e.target.value)} style={{ width: '100%' }} />
+          </div>
+
+          <div className={styles.paramGroup}>
+            <label className={styles.paramLabel}>Dénivelé Positif (m)</label>
+            <input type="number" step="10" className="input-field" placeholder="Ex: 2500" value={officialElevation} onChange={e => setOfficialElevation(e.target.value)} style={{ width: '100%' }} />
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.layout}>
+        <div className={styles.mainColumn}>
+          <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
+            <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Carte & Ravitaillements</h2>
+            <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+              Cliquez sur la trace (ligne orange) pour ajouter un nouveau point de contrôle ou ravitaillement manuellement.
+            </p>
+            <MapComponent 
+              points={points} 
+              segments={segments} 
+              onAddWaypoint={handleAddWaypoint}
+              onRemoveWaypoint={handleRemoveWaypoint}
+              hoveredPoint={hoveredPoint}
+              waypointCount={waypoints.length}
+            />
+          </div>
+
+          <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
+            <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Profil Altimétrique</h2>
+            <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+              Cliquez n'importe où sur le graphique pour ajouter un point de contrôle à cette distance exacte.
+            </p>
+            <ElevationProfile 
+              points={points} 
+              segments={segments} 
+              startTime={startTime} 
+              distanceFactor={currentDistFactor}
+              onAddWaypointByDistance={(dist) => addWaypointAtDistance(dist)} 
+              onHoverDistance={handleHoverDistance}
+            />
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Roadbook</h2>
+            
+            {!showManualAdd ? (
+              <button 
+                onClick={() => setShowManualAdd(true)} 
+                className="btn btn-secondary" 
+                style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <span>➕</span> Ajouter un point manuellement
+              </button>
+            ) : (
+              <div style={{ marginBottom: '24px', background: 'var(--bg-surface)', padding: '20px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)', position: 'relative' }}>
+                <button 
+                  onClick={() => setShowManualAdd(false)}
+                  style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: 'var(--text-secondary)' }}
+                  title="Fermer"
+                >
+                  ✖
+                </button>
+                <h3 style={{ fontSize: '1rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>📍</span> Ajouter un point de passage manuellement
+                </h3>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '0 0 140px' }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '6px' }}>Distance (km)</label>
+                    <input type="number" step="0.1" placeholder="ex: 15.5" value={newWpKm} onChange={e => setNewWpKm(e.target.value)} className="input-field" style={{ width: '100%' }} />
+                  </div>
+                  <div style={{ flex: '1 1 200px' }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '6px' }}>Nom du lieu (Ravitaillement, Col...)</label>
+                    <input type="text" placeholder="ex: Ravito des crêtes" value={newWpName} onChange={e => setNewWpName(e.target.value)} className="input-field" style={{ width: '100%' }} />
+                  </div>
+                  <div style={{ flex: '0 0 140px' }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '6px' }}>Type</label>
+                    <select value={newWpType} onChange={e => setNewWpType(e.target.value)} className="input-field" style={{ width: '100%' }}>
+                      <option value="point">Point de passage</option>
+                      <option value="water">Point d'eau</option>
+                      <option value="full">Ravito complet</option>
+                      <option value="base">Base vie</option>
+                    </select>
+                  </div>
+                  <button onClick={() => {
+                    handleAddWaypointByKm();
+                    setShowManualAdd(false);
+                  }} className="btn btn-primary" style={{ height: '38px', padding: '0 20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>➕</span> Ajouter ce point
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {segments.map((seg, index) => {
+                
+                // Calcul des besoins nutritionnels jusqu'au prochain ravitaillement perso (Assistance ou Dropbag)
+                let accumulatedDurationSlowMs = seg.durationSlowMs;
+                let nextRestockIndex = -1;
+                
+                for (let j = index; j < segments.length; j++) {
+                  if (j > index) {
+                    accumulatedDurationSlowMs += segments[j].durationSlowMs;
+                  }
+                  
+                  if (segments[j].to.has_dropbag || segments[j].to.assistance_allowed || j === segments.length - 1) {
+                    nextRestockIndex = j;
+                    break;
+                  }
+                }
+                
+                // Calcul spécifique pour l'eau (n'importe quel point d'eau suffit)
+                let accumulatedWaterDurationSlowMs = seg.durationSlowMs;
+                let nextWaterRestockIndex = -1;
+                
+                for (let j = index; j < segments.length; j++) {
+                  if (j > index) {
+                    accumulatedWaterDurationSlowMs += segments[j].durationSlowMs;
+                  }
+                  
+                  const tType = segments[j].to.type;
+                  if (tType === 'water' || tType === 'full' || tType === 'base' || segments[j].to.has_dropbag || segments[j].to.assistance_allowed || j === segments.length - 1) {
+                    nextWaterRestockIndex = j;
+                    break;
+                  }
+                }
+                
+                const legDurationSlowHours = accumulatedDurationSlowMs / 3600000;
+                const waterLegDurationSlowHours = accumulatedWaterDurationSlowMs / 3600000;
+                const segmentDurationSlowHours = seg.durationSlowMs / 3600000;
+                
+                const nextRestockName = nextRestockIndex !== -1 ? segments[nextRestockIndex].to.name : "Arrivée";
+                const nextWaterRestockName = nextWaterRestockIndex !== -1 ? segments[nextWaterRestockIndex].to.name : "Arrivée";
+                
+                const carbsNeeded = Math.round(legDurationSlowHours * (parseInt(carbTarget) || 0));
+                const sodiumNeeded = Math.round(legDurationSlowHours * (parseInt(sodiumTarget) || 0));
+                const waterNeeded = Math.round(waterLegDurationSlowHours * (parseInt(waterTarget) || 0));
+                
+                const segmentCarbsNeeded = Math.round(segmentDurationSlowHours * (parseInt(carbTarget) || 0));
+                const segmentSodiumNeeded = Math.round(segmentDurationSlowHours * (parseInt(sodiumTarget) || 0));
+                const segmentWaterNeeded = Math.round(segmentDurationSlowHours * (parseInt(waterTarget) || 0));
+                
+                let plannedCarbs = 0;
+                let plannedSodium = 0;
+                let plannedWater = 0;
+                
+                if (seg.to.planned_nutrition) {
+                  Object.keys(seg.to.planned_nutrition).forEach(prodId => {
+                     const qty = seg.to.planned_nutrition[prodId];
+                     const prod = inventory.find(p => p.id.toString() === prodId.toString());
+                     if (prod) {
+                        plannedCarbs += (prod.carbs || 0) * qty;
+                        plannedSodium += (prod.sodium || 0) * qty;
+                        
+                        // Si le nom du produit contient "ml", on essaie d'extraire la quantité d'eau pour la jauge.
+                        const mlMatch = prod.name.match(/(\d+)\s*ml/i);
+                        if (mlMatch) {
+                          plannedWater += parseInt(mlMatch[1]) * qty;
+                        }
+                     }
+                  });
+                }
+                
+                const timeOnClimbsHours = ((seg.durationSlowMs / 3600000) * (seg.climbKmEffort / (seg.kmEffort || 1))) || 0;
+                const vamEst = timeOnClimbsHours > 0 ? Math.round(seg.climbElePos / timeOnClimbsHours) : 0;
+                
+                const departureTimeFast = index === 0 
+                  ? (startTime ? new Date(startTime).toISOString() : null)
+                  : segments[index - 1].arr_fast;
+                  
+                const departureTimeSlow = index === 0 
+                  ? (startTime ? new Date(startTime).toISOString() : null)
+                  : segments[index - 1].arr_slow;
+
+                const isNight = getNightIntensity(new Date(seg.arr_slow), baseLat, baseLon) > 0;
+
+                return (
+                  <div key={seg.id} className={styles.segmentCard}>
+                    <div className={styles.segmentHeader}>
+                      <div className={styles.segmentTitle}>
+                        <h3>
+                          <span style={{color: 'var(--text-secondary)', marginRight: '8px'}}>#{index+1}</span>
+                          {seg.from.name} ➔ {seg.to.id.startsWith("wp-end") ? seg.to.name : (
+                            <input 
+                              type="text" 
+                              value={seg.to.name || ""} 
+                              onChange={(e) => handleUpdateWaypoint(seg.to.id, { name: e.target.value })}
+                              className="input-field"
+                              style={{ padding: '4px 8px', fontSize: '1.25rem', width: 'auto', minWidth: '150px', fontWeight: 'bold' }}
+                            />
+                          )}
+                        </h3>
+                        <div className={styles.cumulBlock}>
+                          <span>🏃 {seg.cumulDistance.toFixed(1)} km</span>
+                          <span style={{ color: '#F59E0B' }}>⛰️ +{seg.cumulElevation.toFixed(0)}m</span>
+                        </div>
+                      </div>
+                      
+                      <div style={{display: 'flex', gap: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '8px'}}>
+                        <span>Dist: {seg.distance.toFixed(1)} km</span>
+                        <span>D+: +{seg.elevationPos.toFixed(0)}m</span>
+                        {!seg.to.id.startsWith("wp-end") && (
+                          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                            <Timer size={14}/> Barrière:
+                            <input 
+                              type="time" 
+                              className="input-field" 
+                              style={{ padding: '2px 6px', fontSize: '12px' }}
+                              value={seg.to.cutoffTime || ""}
+                              onChange={(e) => handleUpdateWaypoint(seg.to.id, { cutoffTime: e.target.value })}
+                            />
+                          </div>
+                        )}
+                        {!seg.to.id.startsWith("wp-end") && (
+                          <button 
+                            onClick={() => handleRemoveWaypoint(seg.to.id)}
+                            style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '0 8px', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            title="Supprimer ce point"
+                          >
+                            <Trash2 size={14} /> Supprimer étape
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className={styles.interactiveForm}>
+                      <div className={styles.formGroup}>
+                        <label>Type</label>
+                        <select 
+                          value={seg.to.type || "point"} 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { type: e.target.value })}
+                        >
+                          <option value="point">Point de passage</option>
+                          <option value="water">Point d'eau</option>
+                          <option value="full">Ravito complet</option>
+                          <option value="base">Base vie</option>
+                        </select>
+                      </div>
+                      
+                      <div className={styles.formGroup}>
+                        <label>Vitesse (%)</label>
+                        <input 
+                          type="number" 
+                          value={Number.isNaN(seg.to.time_modifier) ? "" : (seg.to.time_modifier || 100)} 
+                          min="50" 
+                          max="200" 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { time_modifier: e.target.value === '' ? '' : (parseFloat(e.target.value) || 100) })} 
+                        />
+                      </div>
+                      
+                      <div className={styles.formGroup}>
+                        <label>Pause (min)</label>
+                        <input 
+                          type="number" 
+                          value={Number.isNaN(seg.to.pause) ? "" : (seg.to.pause || 0)} 
+                          min="0" 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { pause: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} 
+                        />
+                      </div>
+                      
+                      <div className={styles.checkboxesContainer}>
+                        <label className={styles.checkboxGroup}>
+                          <input 
+                            type="checkbox" 
+                            checked={seg.to.assistance_allowed || false} 
+                            onChange={e => handleUpdateWaypoint(seg.to.id, { assistance_allowed: e.target.checked })} 
+                          />
+                          <span>Assistance</span>
+                        </label>
+                        <label className={styles.checkboxGroup}>
+                          <input 
+                            type="checkbox" 
+                            checked={seg.to.has_dropbag || false} 
+                            onChange={e => handleUpdateWaypoint(seg.to.id, { has_dropbag: e.target.checked })} 
+                          />
+                          <span>Dropbag</span>
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <div style={{ padding: '16px', background: 'var(--background)', borderBottom: '1px solid var(--border-light)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                      <div style={{display: 'flex', flexDirection: 'column'}}>
+                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}><Clock size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Temps & Allure (Rapide / Lent)</span>
+                        <div style={{fontSize: '0.875rem', marginTop: '4px'}}>
+                          <span style={{fontWeight: 'bold', color: '#10B981'}}>{formatDuration(seg.durationFastMs)}</span> / <span style={{fontWeight: 'bold', color: '#F59E0B'}}>{formatDuration(seg.durationSlowMs)}</span>
+                          <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Allure Lent: {calculatePace(seg.durationSlowMs, seg.distance)} /km</div>
+                        </div>
+                      </div>
+                      <div style={{display: 'flex', flexDirection: 'column'}}>
+                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}><Timer size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Heure de passage</span>
+                        <div style={{fontSize: '0.875rem', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px'}}>
+                          <span style={{color: '#10B981'}}>Rapide: {formatTime(departureTimeFast)} ➔ <strong>{formatTime(seg.arr_fast)}</strong></span>
+                          <span style={{color: '#F59E0B'}}>Lent: {formatTime(departureTimeSlow)} ➔ <strong>{formatTime(seg.arr_slow)}</strong></span>
+                        </div>
+                      </div>
+                      <div style={{display: 'flex', flexDirection: 'column'}}>
+                        <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '8px' }}>
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase'}}>
+                            <Activity size={12} style={{display: 'inline', marginRight: '4px', verticalAlign: 'middle'}}/>Besoins (Solide: {nextRestockName} | Eau: {nextWaterRestockName})
+                          </span>
+                          <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>Ce segment uniquement : {segmentCarbsNeeded}g Gluc / {segmentSodiumNeeded}mg Sod / {segmentWaterNeeded}ml Eau</span>
+                        </div>
+                        
+                        {/* Nutrition Gauges */}
+                        <div className={styles.nutriNeeded}>
+                          
+                          {/* Glucides */}
+                          <div className={styles.gaugeContainer}>
+                            <span className={styles.gaugeLabel} title="Glucides"><Utensils size={12} style={{display: 'inline', color: '#10B981', marginRight: '4px', verticalAlign: 'middle'}}/> Gluc.</span>
+                            <div className={styles.gaugeTrack}>
+                              <div 
+                                className={styles.gaugeFill} 
+                                style={{
+                                  width: `${Math.min((plannedCarbs / (carbsNeeded || 1)) * 100, 100)}%`, 
+                                  backgroundColor: plannedCarbs >= carbsNeeded ? '#10B981' : '#F59E0B'
+                                }} 
+                              />
+                            </div>
+                            <span className={styles.gaugeValue}>{plannedCarbs}/{carbsNeeded}g</span>
+                          </div>
+
+                          {/* Sodium */}
+                          <div className={styles.gaugeContainer}>
+                            <span className={styles.gaugeLabel} title="Sodium"><Activity size={12} style={{display: 'inline', color: '#F59E0B', marginRight: '4px', verticalAlign: 'middle'}}/> Sod.</span>
+                            <div className={styles.gaugeTrack}>
+                              <div 
+                                className={styles.gaugeFill} 
+                                style={{
+                                  width: `${Math.min((plannedSodium / (sodiumNeeded || 1)) * 100, 100)}%`, 
+                                  backgroundColor: plannedSodium >= sodiumNeeded ? '#10B981' : '#F59E0B'
+                                }} 
+                              />
+                            </div>
+                            <span className={styles.gaugeValue}>{plannedSodium}/{sodiumNeeded}mg</span>
+                          </div>
+
+                          {/* Eau */}
+                          <div className={styles.gaugeContainer}>
+                            <span className={styles.gaugeLabel} title="Eau"><Droplets size={12} style={{display: 'inline', color: '#3B82F6', marginRight: '4px', verticalAlign: 'middle'}}/> Eau</span>
+                            <div className={styles.gaugeTrack}>
+                              <div 
+                                className={styles.gaugeFill} 
+                                style={{
+                                  width: `${Math.min((plannedWater / (waterNeeded || 1)) * 100, 100)}%`, 
+                                  backgroundColor: plannedWater >= waterNeeded ? '#3B82F6' : '#9CA3AF'
+                                }} 
+                              />
+                            </div>
+                            <span className={styles.gaugeValue}>{plannedWater}/{waterNeeded}ml</span>
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className={styles.nutritionBlock} style={{ borderBottom: '1px solid var(--border-light)', margin: 0, padding: '16px' }}>
+                      <h4>🍎 Nutrition à emporter depuis {seg.from.name}</h4>
+                      <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '-8px', marginBottom: '12px'}}>
+                        Vers {nextRestockName} ({legDurationSlowHours.toFixed(1)}h estimées) | Eau vers {nextWaterRestockName} ({waterLegDurationSlowHours.toFixed(1)}h estimées)
+                      </p>
+                      <div className={styles.nutriGrid}>
+                        {inventory.map(prod => (
+                          <div key={prod.id} className={styles.nutriItem}>
+                            <label>{prod.name}</label>
+                            <div className={styles.qtyControl}>
+                              <button onClick={() => handleWaypointNutritionChange(seg.to.id, prod.id, -1)} className={styles.qtyBtn}>-</button>
+                              <span className={styles.qtyInput}>{(seg.to.planned_nutrition && seg.to.planned_nutrition[prod.id]) || 0}</span>
+                              <button onClick={() => handleWaypointNutritionChange(seg.to.id, prod.id, 1)} className={styles.qtyBtn}>+</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', background: 'var(--surface-color)', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}>
+                        <div style={{fontSize: '0.875rem', fontWeight: 'bold'}}>Répartition du terrain</div>
+                        <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                          (Marche {'>'} {seg.terrain?.walkThresholdPercent?.toFixed(1)}%)
+                        </div>
+                      </div>
+                      
+                      <div style={{display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', width: '100%', marginBottom: '12px'}}>
+                        {seg.terrain?.downFlatDist > 0 && (
+                          <div 
+                            style={{width: `${(seg.terrain.downFlatDist / seg.distance) * 100}%`, background: '#10B981'}} 
+                            title={`Descente & Plat: ${seg.terrain.downFlatDist.toFixed(1)} km`}
+                          />
+                        )}
+                        {seg.terrain?.runUphillDist > 0 && (
+                          <div 
+                            style={{width: `${(seg.terrain.runUphillDist / seg.distance) * 100}%`, background: '#F59E0B'}}
+                            title={`Montée Courable: ${seg.terrain.runUphillDist.toFixed(1)} km`}
+                          />
+                        )}
+                        {seg.terrain?.walkDist > 0 && (
+                          <div 
+                            style={{width: `${(seg.terrain.walkDist / seg.distance) * 100}%`, background: '#8B5CF6'}}
+                            title={`Marche: ${seg.terrain.walkDist.toFixed(1)} km`}
+                          />
+                        )}
+                      </div>
+                      
+                      <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', flexWrap: 'wrap', gap: '8px'}}>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                          <div style={{width: '8px', height: '8px', borderRadius: '50%', background: '#10B981'}}></div>
+                          <span>Descente/Plat ({seg.terrain?.downFlatDist?.toFixed(1)} km)</span>
+                        </div>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                          <div style={{width: '8px', height: '8px', borderRadius: '50%', background: '#F59E0B'}}></div>
+                          <span>Course côte ({seg.terrain?.runUphillDist?.toFixed(1)} km)</span>
+                        </div>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                          <div style={{width: '8px', height: '8px', borderRadius: '50%', background: '#8B5CF6'}}></div>
+                          <span>Marche ({seg.terrain?.walkDist?.toFixed(1)} km)</span>
+                        </div>
+                        
+                        {(seg.elevationPos / Math.max(1, seg.distance) > 80) && (
+                          <span style={{background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>🦯 Sortir les bâtons</span>
+                        )}
+                        {isNight && (
+                          <span style={{background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>🌙 Nuit (Frontale)</span>
+                        )}
+                        {vamEst > 0 && (
+                          <span style={{background: 'rgba(139, 92, 246, 0.1)', color: '#8B5CF6', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold'}}>⛰️ VAM: {vamEst} m/h</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ajout du profil altimétrique spécifique à ce segment */}
+                    <div style={{ padding: '16px', background: 'var(--background)', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '8px'}}>Profil du segment</div>
+                      <SegmentElevationProfile points={seg.points} baseCumulDist={seg.cumulDistance - seg.distance} distanceFactor={currentDistFactor} />
+                    </div>
+                    
+                    {seg.to.assistance_allowed && (
+                      <div className={styles.assistanceBox}>
+                        <h4 style={{margin: '0 0 8px 0', fontSize: '0.875rem', color: '#27ae60'}}>🤝 Consignes Assistance ({seg.to.name})</h4>
+                        <textarea 
+                          value={seg.to.assistance_notes || ""} 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { assistance_notes: e.target.value })} 
+                          placeholder="Ex: Préparez les bâtons, changer de chaussettes..."
+                          className="input-field"
+                          style={{width: '100%', minHeight: '60px', padding: '8px'}}
+                        />
+                      </div>
+                    )}
+                    
+                    {seg.to.has_dropbag && (
+                      <div className={styles.dropbagBox}>
+                        <h4 style={{margin: '0 0 8px 0', fontSize: '0.875rem', color: '#8e44ad'}}>🎒 Contenu Sac d'Allègement</h4>
+                        <input 
+                          type="text" 
+                          value={seg.to.dropbag_items || ""} 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { dropbag_items: e.target.value })} 
+                          placeholder="Matériel de rechange, chaussures..."
+                          className="input-field"
+                          style={{width: '100%', padding: '8px'}}
+                        />
+                      </div>
+                    )}
+
+                  </div>
+                );
+              })}
+              {segments.length === 0 && <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Aucun segment calculé</div>}
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}

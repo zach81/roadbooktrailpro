@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TrailRoadbookPro Mock" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Mock UTMB Track</name>
+  </metadata>
+  <trk>
+    <name>Mock UTMB</name>
+    <trkseg>
+      <trkpt lat="45.9236" lon="6.8694"><ele>1035</ele></trkpt>
+      <trkpt lat="45.9000" lon="6.8500"><ele>1500</ele></trkpt>
+      <trkpt lat="45.8500" lon="6.8000"><ele>2400</ele></trkpt>
+      <trkpt lat="45.8000" lon="6.7500"><ele>1200</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
