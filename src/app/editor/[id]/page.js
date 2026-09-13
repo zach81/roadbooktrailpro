@@ -145,6 +145,21 @@ export default function RoadbookEditor() {
           if (data.weather) setWeather(data.weather);
           if (data.itraIndex) setItraIndex(data.itraIndex);
           if (data.vma) setVma(data.vma);
+          
+          // Récupération des valeurs par défaut du profil utilisateur si manquantes
+          if (!data.itraIndex || !data.vma || data.weight === undefined) {
+            try {
+              const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+              if (userDoc.exists()) {
+                const userData = userDoc.data();
+                if (!data.itraIndex && userData.itraIndex) setItraIndex(userData.itraIndex.toString());
+                if (!data.vma && userData.vma) setVma(userData.vma.toString());
+                if (data.weight === undefined && userData.weight) setWeight(userData.weight.toString());
+              }
+            } catch (err) {
+              console.error("Impossible de charger les paramètres par défaut du profil:", err);
+            }
+          }
           if (data.descentThreshold !== undefined) setDescentThreshold(data.descentThreshold);
           if (data.inventory) {
             const inv = JSON.parse(data.inventory);

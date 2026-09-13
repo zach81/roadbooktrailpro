@@ -30,6 +30,7 @@ export default function Navbar() {
         <Link href="/" className={styles.logo}>
           <Map size={22} className={styles.logoIcon} />
           <span className={styles.logoText}>mykairn</span>
+          <span className={styles.betaBadge}>BETA</span>
         </Link>
 
         {/* Slot d'actions injecté par les pages */}

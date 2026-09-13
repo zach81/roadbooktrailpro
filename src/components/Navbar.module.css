@@ -46,6 +46,20 @@
   line-height: 1;
 }
 
+.betaBadge {
+  background-color: var(--color-primary);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-left: 0.25rem;
+  align-self: flex-start;
+  margin-top: 0.25rem;
+}
+
 /* ─── Page Actions Slot (injected by pages) ──────────────────────────────── */
 .pageActions {
   display: flex;

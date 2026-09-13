@@ -597,25 +597,25 @@ function computeWalkThreshold(x, E, fatiguePercent) {
 export function estimateTimeFromVMA(vmaKmh, kmEffort, fatiguePercent = 15) {
   if (!vmaKmh || vmaKmh <= 0 || !kmEffort || kmEffort <= 0) return null;
 
-  // % VMA utilisé selon la durée estimée (itération convergente)
-  // En trail, on part d'une estimation initiale en supposant ~50% VMA,
-  // puis on affine.
-  let pctVma = 0.50;
-  let estimatedH = kmEffort / (vmaKmh * pctVma);
+  // Conversion approximative de la VMA vers un index ITRA équivalent
+  // Une VMA de 20 km/h correspond environ à 910 ITRA
+  // Une VMA de 15 km/h correspond environ à 585 ITRA
+  const equivalentItra = Math.max(200, (vmaKmh - 6) * 65);
 
-  // 2 itérations suffisent pour converger
-  for (let iter = 0; iter < 2; iter++) {
-    // Décroissance du % VMA avec la durée (régression modifiée)
-    // basée sur : 1h=85%, 3h=72%, 6h=65%, 12h=58%, 24h=52%
-    pctVma = Math.max(0.35, 0.85 * Math.pow(estimatedH, -0.15));
-    estimatedH = kmEffort / (vmaKmh * pctVma);
-  }
+  const speedKe = 1.5 + (equivalentItra / 1000) * 16.5; 
+  
+  // L'exposant de distance varie selon le niveau : plus la VMA est faible,
+  // plus la dégradation de vitesse sur la distance est importante.
+  const exponent = 0.05 + ((1000 - equivalentItra) / 2500); 
+  const distanceFactor = Math.pow(kmEffort / 60, exponent); 
+  
+  const newSpeedKe = speedKe / distanceFactor; 
+  const baseH = kmEffort / newSpeedKe;
 
-  // Ajout de la fatigue : le modèle exponentiel augmente le temps moyen
-  // de environ fatiguePercent/2 par rapport à la vitesse initiale
+  // Ajout de la fatigue
   const fatigueFactor = 1 + (fatiguePercent / 200);
-  const fastH = Math.round(estimatedH * fatigueFactor * 10) / 10;
-  const slowH = Math.round(estimatedH * fatigueFactor * 1.20 * 10) / 10;
+  const fastH = Math.round(baseH * fatigueFactor * 10) / 10;
+  const slowH = Math.round(baseH * fatigueFactor * 1.20 * 10) / 10;
 
   return { fastH, slowH };
 }
@@ -636,11 +636,18 @@ export function estimateTimeFromVMA(vmaKmh, kmEffort, fatiguePercent = 15) {
 export function estimateTimeFromITRA(itraIndex, kmEffort, fatiguePercent = 15) {
   if (!itraIndex || itraIndex <= 0 || !kmEffort || kmEffort <= 0) return null;
 
-  // Modèle empirique : vitesse de base = 2 + (index/1000) * 17
-  // Calibré pour correspondre à ~26h sur UTMB (700 ITRA) et ~17.5h sur CCC (600 ITRA)
-  const speedKe = 2 + (itraIndex / 1000) * 17; // km-effort/h
-  const baseH = kmEffort / speedKe;
+  // Modèle empirique affiné pour gérer à la fois les trails courts et les ultras
+  const speedKe = 1.5 + (itraIndex / 1000) * 16.5; 
+  
+  // L'exposant de distance varie selon le niveau ITRA : un coureur moins performant
+  // subira une plus forte dégradation de sa vitesse sur les longues distances.
+  const exponent = 0.05 + ((1000 - itraIndex) / 2500); 
+  const distanceFactor = Math.pow(kmEffort / 60, exponent); 
+  
+  const newSpeedKe = speedKe / distanceFactor; 
+  const baseH = kmEffort / newSpeedKe;
 
+  // Ajout de la fatigue
   const fatigueFactor = 1 + (fatiguePercent / 200);
   const fastH = Math.round(baseH * fatigueFactor * 10) / 10;
   const slowH = Math.round(baseH * fatigueFactor * 1.20 * 10) / 10;
