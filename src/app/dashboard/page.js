@@ -267,9 +267,9 @@ export default function Dashboard() {
                 </div>
                 {rb.targetFast && (
                   <div className={styles.stat} style={{ gridColumn: 'span 2', background: 'var(--bg-surface-elevated)', padding: '8px', borderRadius: '8px', marginTop: '4px' }}>
-                    <span className={styles.statLabel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={14}/> Temps estimé (Rapide / Lent)</span>
+                    <span className={styles.statLabel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={14}/> Objectif</span>
                     <span className={styles.statValue} style={{ fontSize: '0.9rem' }}>
-                      <span style={{ color: '#10B981' }}>{rb.targetFast}h</span> / <span style={{ color: '#F59E0B' }}>{rb.targetSlow}h</span>
+                      <span style={{ color: '#10B981' }}>{rb.targetFast}h</span>
                     </span>
                   </div>
                 )}

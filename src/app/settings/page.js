@@ -20,7 +20,6 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState("");
   
   const [itraIndex, setItraIndex] = useState("");
-  const [vma, setVma] = useState("");
   const [weight, setWeight] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -40,7 +39,6 @@ export default function SettingsPage() {
       if (userDoc.exists()) {
         const data = userDoc.data();
         if (data.itraIndex) setItraIndex(data.itraIndex);
-        if (data.vma) setVma(data.vma);
         if (data.weight) setWeight(data.weight);
       }
     } catch (err) {
@@ -55,7 +53,6 @@ export default function SettingsPage() {
       setSuccess("");
       await setDoc(doc(db, "users", currentUser.uid), {
         itraIndex: itraIndex ? parseFloat(itraIndex) : null,
-        vma: vma ? parseFloat(vma) : null,
         weight: weight ? parseFloat(weight) : null,
       }, { merge: true });
       setSuccess("Profil coureur mis à jour !");
@@ -183,18 +180,6 @@ export default function SettingsPage() {
               placeholder="Ex: 500" 
               value={itraIndex} 
               onChange={e => setItraIndex(e.target.value)} 
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label className={styles.inputLabel}>VMA (km/h)</label>
-            <input 
-              type="number" 
-              step="0.1"
-              className="input-field" 
-              placeholder="Ex: 15" 
-              value={vma} 
-              onChange={e => setVma(e.target.value)} 
             />
           </div>
 

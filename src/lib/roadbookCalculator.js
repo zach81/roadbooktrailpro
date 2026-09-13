@@ -578,19 +578,7 @@ function computeWalkThreshold(x, E, fatiguePercent) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 7. ESTIMATION VMA → TEMPS CIBLE (Jack Daniels adapté trail)
-// ─────────────────────────────────────────────────────────────
-
-export function estimateTimeFromVMA(vmaKmh, kmEffort, fatiguePercent = 15) {
-  if (!vmaKmh || vmaKmh <= 0 || !kmEffort || kmEffort <= 0) return null;
-
-  // Conversion approximative de la VMA vers un index ITRA équivalent
-  // Une VMA de 20 km/h correspond environ à 910 ITRA
-  // Une VMA de 15 km/h correspond environ à 585 ITRA
-  const equivalentItra = Math.max(200, (vmaKmh - 6) * 65);
-
-  return estimateTimeFromITRA(equivalentItra, kmEffort, fatiguePercent);
-}
+// La fonction estimateTimeFromVMA a été supprimée selon les spécifications.
 
 /**
  * Estime un temps cible à partir de l'index ITRA du coureur en utilisant le modèle de Riegel étendu.

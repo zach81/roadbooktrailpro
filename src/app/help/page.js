@@ -17,7 +17,7 @@ const sections = [
         text: `TrailRoadbookPro transforme votre fichier GPX en un plan de marche complet et scientifique. Voici le workflow recommandé :`,
         steps: [
           "Importez votre fichier GPX depuis le tableau de bord.",
-          "Renseignez votre profil coureur : Index ITRA ou VMA. Ces données calculent automatiquement vos objectifs de temps.",
+          "Renseignez votre profil coureur : l'Index ITRA peut servir de guide pour vos estimations.",
           "Entrez les données officielles de la course (distance et D+ annoncés). Le moteur calibre alors le fichier GPS sur les valeurs réelles.",
           "Définissez votre heure de départ et la météo prévue.",
           "Ajoutez vos points de passage depuis le graphique altimétrique (clic sur la trace) ou la carte.",
@@ -95,33 +95,13 @@ où α = ln(1 + fatiguePercent/100)`,
   {
     id: "profile",
     icon: <Activity size={20} />,
-    title: "Profil Coureur — VMA & ITRA",
+    title: "Profil Coureur — ITRA",
     color: "#F59E0B",
     content: [
       {
         subtitle: "Index ITRA",
-        text: `L'ITRA (International Trail Running Association) attribue un index de performance entre 0 et 1000 basé sur vos résultats officiels de trail. C'est la référence mondiale pour évaluer le niveau d'un traileur.`,
-        steps: [
-          "100-200 : Débutant (premières courses trail)",
-          "300-400 : Intermédiaire (trails réguliers, semi-marathon montagne)",
-          "500-600 : Confirmé (finisher UTMB, CCC, etc.)",
-          "700-800 : Expert (top 20% sur les grands ultras)",
-          "900-1000 : Élite mondiale"
-        ],
+        text: `L'ITRA (International Trail Running Association) attribue un index de performance entre 0 et 1000 basé sur vos résultats officiels de trail. C'est la référence mondiale pour évaluer le niveau d'un traileur. L'application utilise cet index pour vous proposer un temps d'objectif indicatif.`,
         formulaNote: "Consultez votre index sur le site officiel ITRA (itra.run). Votre index est disponible dans votre profil si vous avez des résultats validés."
-      },
-      {
-        subtitle: "VMA — Vitesse Maximale Aérobie",
-        text: `La VMA est la vitesse minimale à laquelle vous consommez le maximum d'oxygène (VO2max). Elle s'exprime en km/h. En trail, on travaille à un % bien inférieur à la VMA selon la durée.`,
-        formula: `% VMA utilisé ≈ 82% × durée(h)^(-0.065)
-Exemples : 1h → 80% VMA | 6h → 60% | 12h → 50% | 24h → 42%`,
-        formulaNote: "Régression sur données ITRA/UTMB. Plus la course est longue, plus le % VMA utilisable est faible.",
-        steps: [
-          "VMA 14 km/h : niveau correct pour le trail",
-          "VMA 16 km/h : bon niveau (régulier sur piste ou route)",
-          "VMA 18+ km/h : excellent, pratique course à pied intensive",
-          "Si vous ne connaissez pas votre VMA, utilisez l'index ITRA à la place."
-        ]
       },
       {
         subtitle: "Seuil Marche / Course",
@@ -428,7 +408,7 @@ export default function HelpPage() {
       </main>
 
       <footer className={styles.footer}>
-        <p>TrailRoadbookPro — Basé sur les modèles : Minetti (2002), Jack Daniels VDOT, Périard (2015), Jared Ward (2017)</p>
+        <p>TrailRoadbookPro — Basé sur les modèles : Minetti (2002), Périard (2015), Jared Ward (2017)</p>
         <Link href="/dashboard" className="btn btn-primary" style={{ marginTop: '16px' }}>
           Retour au tableau de bord
         </Link>

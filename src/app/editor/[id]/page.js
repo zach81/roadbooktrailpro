@@ -9,7 +9,7 @@ import dynamic from 'next/dynamic';
 import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2, Coffee } from "lucide-react";
 import Link from "next/link";
 import styles from "./editor.module.css";
-import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromVMA, estimateTimeFromITRA, calculateKmEffort } from "@/lib/roadbookCalculator";
+import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromITRA, calculateKmEffort } from "@/lib/roadbookCalculator";
 
 import DisplaySettings, { useDisplaySettings } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
@@ -46,13 +46,12 @@ export default function RoadbookEditor() {
   const [editName, setEditName] = useState("");
   
   const [targetFast, setTargetFast] = useState(28);
-  const [targetSlow, setTargetSlow] = useState(35);
+  const targetSlow = targetFast * 1.2; // Computed slow target for internal usage
   const [fatiguePercent, setFatiguePercent] = useState(15);
   const [startTime, setStartTime] = useState("");
   const [officialDistance, setOfficialDistance] = useState("");
   const [officialElevation, setOfficialElevation] = useState("");
   const [itraIndex, setItraIndex] = useState("");
-  const [vma, setVma] = useState("");
   const [descentThreshold, setDescentThreshold] = useState(15);
   const [carbTarget, setCarbTarget] = useState("60");
   const [sodiumTarget, setSodiumTarget] = useState("400");
@@ -88,7 +87,7 @@ export default function RoadbookEditor() {
       );
       setSegments(newSegments);
     }
-  }, [points, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold]);
+  }, [points, waypoints, targetFast, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold]);
 
   const formatTime = (isoString) => {
     if (!isoString) return "--h--";
@@ -132,7 +131,6 @@ export default function RoadbookEditor() {
           setPoints(JSON.parse(data.points || "[]"));
           
           if (data.targetFast) setTargetFast(data.targetFast);
-          if (data.targetSlow) setTargetSlow(data.targetSlow);
           if (data.fatiguePercent !== undefined) setFatiguePercent(data.fatiguePercent);
           if (data.startTime) setStartTime(data.startTime);
           if (data.officialDistance !== undefined) setOfficialDistance(data.officialDistance.toString());
@@ -144,16 +142,14 @@ export default function RoadbookEditor() {
           if (data.weight !== undefined) setWeight(data.weight.toString());
           if (data.weather) setWeather(data.weather);
           if (data.itraIndex) setItraIndex(data.itraIndex);
-          if (data.vma) setVma(data.vma);
           
           // Récupération des valeurs par défaut du profil utilisateur si manquantes
-          if (!data.itraIndex || !data.vma || data.weight === undefined) {
+          if (!data.itraIndex || data.weight === undefined) {
             try {
               const userDoc = await getDoc(doc(db, "users", currentUser.uid));
               if (userDoc.exists()) {
                 const userData = userDoc.data();
                 if (!data.itraIndex && userData.itraIndex) setItraIndex(userData.itraIndex.toString());
-                if (!data.vma && userData.vma) setVma(userData.vma.toString());
                 if (data.weight === undefined && userData.weight) setWeight(userData.weight.toString());
               }
             } catch (err) {
@@ -273,7 +269,6 @@ export default function RoadbookEditor() {
         weight: parseFloat(weight) || 0,
         weather: weather,
         itraIndex: itraIndex,
-        vma: vma,
         descentThreshold: parseFloat(descentThreshold) || 15,
         inventory: JSON.stringify(inventory),
       });
@@ -304,28 +299,19 @@ export default function RoadbookEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayLoaded, displayConfig, saving, id]);
 
-  // Auto-calculate speed targets from VMA or ITRA index (modèle Jack Daniels VDOT adapté trail)
-  useEffect(() => {
-    if (!roadbook || (!vma && !itraIndex)) return;
+  // Guide ITRA (suggestion uniquement)
+  const itraGuide = useMemo(() => {
+    if (!roadbook || !itraIndex) return null;
     const totalDist = roadbook.stats?.distance || 0;
     const totalEle = roadbook.stats?.elevation?.pos || 0;
     const totalEleNeg = roadbook.stats?.elevation?.neg || 0;
-    // Utiliser le nouveau modèle Minetti pour le km-effort
     const kmEffort = calculateKmEffort(totalDist, totalEle, totalEleNeg, parseFloat(descentThreshold) || 15, 10);
-
-    let estimate = null;
-    if (vma && !isNaN(parseFloat(vma))) {
-      estimate = estimateTimeFromVMA(parseFloat(vma), kmEffort, fatiguePercent || 15);
-    } else if (itraIndex && !isNaN(parseInt(itraIndex))) {
-      estimate = estimateTimeFromITRA(parseInt(itraIndex), kmEffort, fatiguePercent || 15);
+    
+    if (itraIndex && !isNaN(parseInt(itraIndex))) {
+      return estimateTimeFromITRA(parseInt(itraIndex), kmEffort, fatiguePercent || 15);
     }
-
-    if (estimate) {
-      if (Math.abs(estimate.fastH - targetFast) > 0.1) setTargetFast(estimate.fastH);
-      if (Math.abs(estimate.slowH - targetSlow) > 0.1) setTargetSlow(estimate.slowH);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vma, itraIndex, roadbook, descentThreshold, fatiguePercent]);
+    return null;
+  }, [itraIndex, roadbook, descentThreshold, fatiguePercent]);
 
   const addProduct = () => {
     setInventory([...inventory, { id: nextProdId, name: 'Nouveau Produit', carbs: 0, sodium: 0, caffeine: 0 }]);
@@ -410,11 +396,9 @@ export default function RoadbookEditor() {
           <strong>{waypoints.length}</strong>
         </div>
         <div className={`${styles.statBox} ${styles.statBoxTime}`}>
-          <span>⚡ Temps estimé · rapide / lent</span>
+          <span>⚡ Objectif de course</span>
           <strong>
             <span style={{ color: '#10B981' }}>{fmtTotalFast}</span>
-            <span className={styles.timeSep}>/</span>
-            <span style={{ color: '#F59E0B' }}>{fmtTotalSlow}</span>
           </strong>
         </div>
       </div>
@@ -427,24 +411,19 @@ export default function RoadbookEditor() {
           <div style={{ display: 'flex', gap: '12px' }}>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
               <label className={styles.paramLabel}>Index ITRA</label>
-              <input type="number" className="input-field" placeholder="Ex: 500" value={itraIndex} onChange={e => { setItraIndex(e.target.value); setVma(""); }} style={{ width: '100%' }} />
+              <input type="number" className="input-field" placeholder="Ex: 500" value={itraIndex} onChange={e => setItraIndex(e.target.value)} style={{ width: '100%' }} />
             </div>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
-              <label className={styles.paramLabel}>VMA (km/h)</label>
-              <input type="number" className="input-field" placeholder="Ex: 15" value={vma} onChange={e => { setVma(e.target.value); setItraIndex(""); }} style={{ width: '100%' }} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
-              <label className={styles.paramLabel}>Obj. Rapide (h)</label>
+              <label className={styles.paramLabel}>Objectif Course (h)</label>
               <input type="number" step="0.5" className="input-field" value={Number.isNaN(targetFast) ? "" : targetFast} onChange={e => setTargetFast(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
             </div>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
-              <label className={styles.paramLabel}>Obj. Lent (h)</label>
-              <input type="number" step="0.5" className="input-field" value={Number.isNaN(targetSlow) ? "" : targetSlow} onChange={e => setTargetSlow(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
-            </div>
           </div>
+          
+          {itraGuide && (
+            <div style={{ fontSize: '0.85rem', color: '#6B7280', marginTop: '-8px', marginBottom: '8px' }}>
+              💡 <span style={{ fontStyle: 'italic' }}>Guide selon ITRA : {itraGuide.fastH.toFixed(1)}h</span>
+            </div>
+          )}
 
           <div className={styles.paramGroup}>
             <label className={styles.paramLabel}>Poids du coureur (kg)</label>
