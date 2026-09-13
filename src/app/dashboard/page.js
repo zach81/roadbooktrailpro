@@ -174,7 +174,7 @@ export default function Dashboard() {
       <header className={styles.header}>
         <h1>Mes Roadbooks</h1>
         
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button 
             className="btn btn-secondary" 
             onClick={() => setShowOfficialModal(true)}

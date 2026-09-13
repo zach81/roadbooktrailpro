@@ -185,3 +185,28 @@
     background: transparent;
   }
 }
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .titleSection {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .table {
+    white-space: nowrap;
+  }
+
+  .infoBox {
+    margin-bottom: 8px;
+  }
+}

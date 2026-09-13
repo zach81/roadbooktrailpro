@@ -233,14 +233,20 @@
 .segmentTitle {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .segmentTitle h3 {
   margin: 0;
   color: var(--color-primary);
   font-size: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .cumulBlock {
@@ -251,6 +257,8 @@
   font-weight: 600;
   display: flex;
   gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .interactiveForm {
@@ -491,4 +499,66 @@
 .invTable td {
   padding: 8px;
   border-bottom: 1px solid var(--border-light);
+}
+
+@media (max-width: 1024px) {
+  .mapProfileGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .statsBar {
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .statBox {
+    min-width: 40%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .globalParamsBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .paramGroup {
+    width: 100%;
+  }
+  
+  .interactiveForm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .formGroup {
+    width: 100%;
+  }
+
+  .checkboxesContainer {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 8px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .titleSection {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .editorHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .invTable {
+    display: block;
+    overflow-x: auto;
+  }
 }

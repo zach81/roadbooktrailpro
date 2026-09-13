@@ -187,3 +187,74 @@
   object-fit: cover;
   border: 1px solid var(--border-light);
 }
+
+.hamburgerBtn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 8px;
+}
+
+.mobilePageActions {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .logoText, .betaBadge {
+    display: none;
+  }
+  
+  .navContainer {
+    gap: 8px;
+  }
+  
+  .hamburgerBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .navLinks {
+    display: none;
+    position: absolute;
+    top: 58px;
+    left: 0;
+    right: 0;
+    background-color: var(--bg-surface);
+    flex-direction: column;
+    padding: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    align-items: stretch;
+  }
+
+  .navLinksOpen {
+    display: flex;
+  }
+
+  .pageActions {
+    display: none; /* Hide desktop actions */
+  }
+
+  .mobilePageActions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .userMenu {
+    padding: 8px;
+    justify-content: flex-start;
+    border-radius: var(--radius-md);
+  }
+
+  .userEmail {
+    display: block;
+    margin-right: auto;
+  }
+}

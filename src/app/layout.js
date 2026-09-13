@@ -22,6 +22,12 @@ export const metadata = {
   description: "Application professionnelle pour la génération de roadbooks de trail à partir de traces GPX.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export default function RootLayout({ children }) {
   return (
     <html
