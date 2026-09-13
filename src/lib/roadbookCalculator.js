@@ -581,19 +581,6 @@ function computeWalkThreshold(x, E, fatiguePercent) {
 // 7. ESTIMATION VMA → TEMPS CIBLE (Jack Daniels adapté trail)
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Estime un temps cible (rapide et lent) à partir de la VMA du coureur
- * et des caractéristiques de la course (km-effort).
- *
- * Principe VDOT (Jack Daniels) adapté trail :
- * Sur une course d'ultra, le % VMA utilisé diminue avec la distance.
- * On utilise une approximation par régression sur des données ITRA/UTMB.
- *
- * @param {number} vmaKmh       - VMA du coureur en km/h
- * @param {number} kmEffort     - Effort total en km-effort
- * @param {number} fatiguePercent - Fatigue estimée (%)
- * @returns {{ fastH: number, slowH: number }} Temps en heures
- */
 export function estimateTimeFromVMA(vmaKmh, kmEffort, fatiguePercent = 15) {
   if (!vmaKmh || vmaKmh <= 0 || !kmEffort || kmEffort <= 0) return null;
 
@@ -602,52 +589,33 @@ export function estimateTimeFromVMA(vmaKmh, kmEffort, fatiguePercent = 15) {
   // Une VMA de 15 km/h correspond environ à 585 ITRA
   const equivalentItra = Math.max(200, (vmaKmh - 6) * 65);
 
-  const speedKe = 1.5 + (equivalentItra / 1000) * 16.5; 
-  
-  // L'exposant de distance varie selon le niveau : plus la VMA est faible,
-  // plus la dégradation de vitesse sur la distance est importante.
-  const exponent = 0.05 + ((1000 - equivalentItra) / 2500); 
-  const distanceFactor = Math.pow(kmEffort / 60, exponent); 
-  
-  const newSpeedKe = speedKe / distanceFactor; 
-  const baseH = kmEffort / newSpeedKe;
-
-  // Ajout de la fatigue
-  const fatigueFactor = 1 + (fatiguePercent / 200);
-  const fastH = Math.round(baseH * fatigueFactor * 10) / 10;
-  const slowH = Math.round(baseH * fatigueFactor * 1.20 * 10) / 10;
-
-  return { fastH, slowH };
+  return estimateTimeFromITRA(equivalentItra, kmEffort, fatiguePercent);
 }
 
 /**
- * Estime un temps cible à partir de l'index ITRA du coureur.
- * L'index ITRA est calibré sur des dizaines de milliers de finishers.
- *
- * Formule : vitesse_itra (km-effort/h) = (index / 1000) * 14.5
- * (14.5 est la vitesse maximale en km-effort/h pour un ITRA 1000,
- * correspondant au niveau élite mondial)
- *
- * @param {number} itraIndex  - Index ITRA du coureur (0-1000)
- * @param {number} kmEffort   - Effort total en km-effort
+ * Estime un temps cible à partir de l'index ITRA du coureur en utilisant le modèle de Riegel étendu.
+ * @param {number} itraIndex - Index ITRA (ex: 600)
+ * @param {number} kmEffort - Kilomètres-effort
  * @param {number} fatiguePercent - Fatigue estimée (%)
  * @returns {{ fastH: number, slowH: number }}
  */
 export function estimateTimeFromITRA(itraIndex, kmEffort, fatiguePercent = 15) {
   if (!itraIndex || itraIndex <= 0 || !kmEffort || kmEffort <= 0) return null;
 
-  // Modèle empirique affiné pour gérer à la fois les trails courts et les ultras
-  const speedKe = 1.5 + (itraIndex / 1000) * 16.5; 
+  // Modèle empirique affiné (Riegel) calibré sur une distance de 71 ke (ex: Madeloc 45km/2600m+)
+  const baseSpeed = 1.0 + (itraIndex / 1000) * 19.0; 
   
-  // L'exposant de distance varie selon le niveau ITRA : un coureur moins performant
-  // subira une plus forte dégradation de sa vitesse sur les longues distances.
-  const exponent = 0.05 + ((1000 - itraIndex) / 2500); 
-  const distanceFactor = Math.pow(kmEffort / 60, exponent); 
+  // Exposant de fatigue de Riegel (1.0 = aucune perte de vitesse avec la distance)
+  // Plus l'ITRA est faible, plus la vitesse s'effondre sur les très longues distances.
+  const timeExponent = 1.0 + ((1000 - itraIndex) / 1000) * 0.9;
   
-  const newSpeedKe = speedKe / distanceFactor; 
-  const baseH = kmEffort / newSpeedKe;
+  // Temps de base pour un effort de 71 ke
+  const baseTime71 = 71 / baseSpeed;
+  
+  // Temps ajusté à la distance (Riegel formula: T2 = T1 * (D2/D1)^exponent)
+  const baseH = baseTime71 * Math.pow(kmEffort / 71, timeExponent);
 
-  // Ajout de la fatigue
+  // Ajout de la fatigue ponctuelle de la course
   const fatigueFactor = 1 + (fatiguePercent / 200);
   const fastH = Math.round(baseH * fatigueFactor * 10) / 10;
   const slowH = Math.round(baseH * fatigueFactor * 1.20 * 10) / 10;

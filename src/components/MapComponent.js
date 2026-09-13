@@ -33,7 +33,7 @@ function MapClickHandler({ onClick }) {
   return null;
 }
 
-export default function MapComponent({ points, segments, onAddWaypoint, onRemoveWaypoint, hoveredPoint, waypointCount }) {
+export default function MapComponent({ points, segments, onAddWaypoint, onRemoveWaypoint, onUpdateWaypoint, hoveredPoint, waypointCount }) {
   const mapRef = useRef(null);
 
   const polylinePositions = useMemo(() => {
@@ -105,14 +105,29 @@ export default function MapComponent({ points, segments, onAddWaypoint, onRemove
               return (
                 <Marker key={wp.id} position={[wp.lat, wp.lon]} icon={createNumberedIcon(label, color)}>
                   <Popup>
-                    <div style={{ textAlign: 'center' }}>
-                      <strong>{wp.name}</strong><br/>
+                    <div style={{ textAlign: 'center', minWidth: '150px' }}>
+                      <input 
+                        type="text" 
+                        value={wp.name || ""} 
+                        onChange={(e) => onUpdateWaypoint && onUpdateWaypoint(wp.id, { name: e.target.value })}
+                        style={{ fontWeight: 'bold', width: '100%', marginBottom: '4px', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px', padding: '2px' }}
+                      /><br/>
+                      <select 
+                        value={wp.type || 'point'} 
+                        onChange={(e) => onUpdateWaypoint && onUpdateWaypoint(wp.id, { type: e.target.value })}
+                        style={{ width: '100%', marginBottom: '8px', padding: '2px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      >
+                        <option value="point">Point de passage</option>
+                        <option value="water">Point d'eau</option>
+                        <option value="full">Ravito complet</option>
+                        <option value="base">Base vie</option>
+                      </select><br/>
                       Alt: {Math.round(wp.ele)}m
                       <br/>
                       {!wp.id.startsWith("wp-start") && !wp.id.startsWith("wp-end") && (
                         <button 
                           onClick={(e) => { e.stopPropagation(); onRemoveWaypoint(wp.id); }}
-                          style={{ marginTop: '8px', padding: '4px 8px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                          style={{ marginTop: '8px', padding: '4px 8px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', width: '100%' }}
                         >
                           Supprimer
                         </button>

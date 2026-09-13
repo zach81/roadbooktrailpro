@@ -550,6 +550,71 @@ export default function RoadbookEditor() {
             </div>
           </div>
         </div>
+        {/* Inventaire Nutritionnel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '24px' }}>
+          <h3 className={styles.sectionTitle}>🎒 Inventaire Nutritionnel</h3>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            Définissez ici vos produits énergétiques pour les répartir sur les ravitaillements.
+          </p>
+          
+          <div className={styles.invTable} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', fontWeight: 'bold', fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '0 8px' }}>
+              <div>Nom du produit</div>
+              <div>Glucides (g)</div>
+              <div>Sodium (mg)</div>
+              <div>Caféine (mg)</div>
+              <div></div>
+            </div>
+            
+            {inventory.map(prod => (
+              <div key={prod.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  value={prod.name} 
+                  onChange={e => updateProduct(prod.id, 'name', e.target.value)}
+                  className="input-field" 
+                  style={{ width: '100%' }}
+                />
+                <input 
+                  type="number" 
+                  value={prod.carbs} 
+                  onChange={e => updateProduct(prod.id, 'carbs', parseFloat(e.target.value) || 0)}
+                  className="input-field" 
+                  style={{ width: '100%' }}
+                />
+                <input 
+                  type="number" 
+                  value={prod.sodium} 
+                  onChange={e => updateProduct(prod.id, 'sodium', parseFloat(e.target.value) || 0)}
+                  className="input-field" 
+                  style={{ width: '100%' }}
+                />
+                <input 
+                  type="number" 
+                  value={prod.caffeine} 
+                  onChange={e => updateProduct(prod.id, 'caffeine', parseFloat(e.target.value) || 0)}
+                  className="input-field" 
+                  style={{ width: '100%' }}
+                />
+                <button 
+                  onClick={() => removeProduct(prod.id)}
+                  style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Supprimer"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+          
+          <button 
+            onClick={addProduct} 
+            className="btn btn-secondary" 
+            style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.875rem' }}
+          >
+            <span>➕</span> Ajouter un produit
+          </button>
+        </div>
       </div>
 
       <div className={styles.layout}>
@@ -564,6 +629,7 @@ export default function RoadbookEditor() {
               segments={segments} 
               onAddWaypoint={handleAddWaypoint}
               onRemoveWaypoint={handleRemoveWaypoint}
+              onUpdateWaypoint={handleUpdateWaypoint}
               hoveredPoint={hoveredPoint}
               waypointCount={waypoints.length}
             />
