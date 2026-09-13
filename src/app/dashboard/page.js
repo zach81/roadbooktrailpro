@@ -198,8 +198,13 @@ export default function Dashboard() {
       ) : (
         <div className={styles.grid}>
           {roadbooks.map((rb) => (
-            <div key={rb.id} className={`card ${styles.roadbookCard}`}>
-              <div className={styles.cardHeader}>
+            <div 
+              key={rb.id} 
+              className={`card ${styles.roadbookCard}`} 
+              onClick={() => router.push(`/editor/${rb.id}`)}
+              style={{ cursor: 'pointer', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-2px)' } }}
+            >
+              <div className={styles.cardHeader} onClick={e => e.stopPropagation()}>
                 {editingId === rb.id ? (
                   <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
                     <input 
@@ -224,7 +229,7 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <>
-                    <h3 className={styles.cardHeaderTitle} onClick={() => router.push(`/editor/${rb.id}`)}>
+                    <h3 className={styles.cardHeaderTitle}>
                       <FileText size={20} className={styles.iconPrimary} /> {rb.name}
                     </h3>
                     <div className={styles.cardActions}>
@@ -247,10 +252,18 @@ export default function Dashboard() {
                   <span className={styles.statLabel}>Dénivelé Positif</span>
                   <span className={styles.statValue} style={{ color: '#27ae60' }}>+{rb.stats.elevation.pos.toFixed(0)} m</span>
                 </div>
+                {rb.targetFast && (
+                  <div className={styles.stat} style={{ gridColumn: 'span 2', background: 'var(--bg-surface-elevated)', padding: '8px', borderRadius: '8px', marginTop: '4px' }}>
+                    <span className={styles.statLabel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={14}/> Temps estimé (Rapide / Lent)</span>
+                    <span className={styles.statValue} style={{ fontSize: '0.9rem' }}>
+                      <span style={{ color: '#10B981' }}>{rb.targetFast}h</span> / <span style={{ color: '#F59E0B' }}>{rb.targetSlow}h</span>
+                    </span>
+                  </div>
+                )}
               </div>
               <div className={styles.cardFooter}>
-                <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => router.push(`/editor/${rb.id}`)}>
-                  <Activity size={16} /> Configurer
+                <button className="btn btn-secondary" style={{ width: '100%' }} onClick={(e) => { e.stopPropagation(); router.push(`/editor/${rb.id}`); }}>
+                  <Activity size={16} /> Ouvrir
                 </button>
               </div>
             </div>

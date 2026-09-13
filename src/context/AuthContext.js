@@ -41,6 +41,9 @@ export function AuthProvider({ children }) {
   // Google Login
   async function loginWithGoogle() {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
     const result = await signInWithPopup(auth, provider);
     
     // Check if user doc exists, if not create it

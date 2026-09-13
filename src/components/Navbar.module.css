@@ -150,3 +150,26 @@
   background-color: rgba(99, 102, 241, 0.08);
   border-color: rgba(99, 102, 241, 0.25);
 }
+
+.settingsLink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  transition: background-color var(--transition-fast);
+}
+
+.settingsLink:hover {
+  background-color: var(--bg-surface);
+}
+
+.profilePic {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+}

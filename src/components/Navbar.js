@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useNavbarActions } from '@/context/NavbarActionsContext';
-import { LogOut, User, Map, HelpCircle } from 'lucide-react';
+import { LogOut, User, Map, HelpCircle, Settings } from 'lucide-react';
 import styles from './Navbar.module.css';
 
 export default function Navbar() {
@@ -46,10 +46,14 @@ export default function Navbar() {
                 <Link href="/help" className={styles.helpLink} title="Guide & Aide">
                   <HelpCircle size={18} />
                 </Link>
-                <span className={styles.userEmail}>
-                  <User size={16} />
-                  {currentUser.email}
-                </span>
+                <Link href="/settings" className={styles.settingsLink} title="Paramètres">
+                  {currentUser.photoURL ? (
+                    <img src={currentUser.photoURL} alt="Profil" className={styles.profilePic} />
+                  ) : (
+                    <User size={16} />
+                  )}
+                  <span className={styles.userEmail}>{currentUser.email}</span>
+                </Link>
                 <button onClick={handleLogout} className={styles.logoutBtn} title="Déconnexion">
                   <LogOut size={18} />
                 </button>
