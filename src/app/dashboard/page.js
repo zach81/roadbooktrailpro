@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { parseGPX, readFileAsText } from "@/lib/gpxService";
 import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Map as MapIcon, ChevronRight } from "lucide-react";
+import { formatDecimalHoursToHHMM } from "@/lib/roadbookCalculator";
 import styles from "./dashboard.module.css";
 
 export default function Dashboard() {
@@ -269,7 +270,7 @@ export default function Dashboard() {
                   <div className={styles.stat} style={{ gridColumn: 'span 2', background: 'var(--bg-surface-elevated)', padding: '8px', borderRadius: '8px', marginTop: '4px' }}>
                     <span className={styles.statLabel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={14}/> Objectif</span>
                     <span className={styles.statValue} style={{ fontSize: '0.9rem' }}>
-                      <span style={{ color: '#10B981' }}>{rb.targetFast}h</span>
+                      <span style={{ color: '#10B981' }}>{formatDecimalHoursToHHMM(rb.targetFast)}</span>
                     </span>
                   </div>
                 )}

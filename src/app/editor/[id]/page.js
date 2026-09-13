@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
@@ -9,7 +9,7 @@ import dynamic from 'next/dynamic';
 import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2, Coffee } from "lucide-react";
 import Link from "next/link";
 import styles from "./editor.module.css";
-import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromITRA, calculateKmEffort } from "@/lib/roadbookCalculator";
+import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromITRA, calculateKmEffort, formatDecimalHoursToHHMM } from "@/lib/roadbookCalculator";
 
 import DisplaySettings, { useDisplaySettings } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
@@ -414,14 +414,27 @@ export default function RoadbookEditor() {
               <input type="number" className="input-field" placeholder="Ex: 500" value={itraIndex} onChange={e => setItraIndex(e.target.value)} style={{ width: '100%' }} />
             </div>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
-              <label className={styles.paramLabel}>Objectif Course (h)</label>
-              <input type="number" step="0.5" className="input-field" value={Number.isNaN(targetFast) ? "" : targetFast} onChange={e => setTargetFast(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+              <label className={styles.paramLabel}>Objectif Course</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input type="number" min="0" className="input-field" placeholder="H" value={targetFast === '' || isNaN(targetFast) ? "" : Math.floor(targetFast)} onChange={e => {
+                  const h = parseInt(e.target.value);
+                  const m = targetFast === '' || isNaN(targetFast) ? 0 : Math.round((targetFast % 1) * 60);
+                  setTargetFast(isNaN(h) ? (m ? m/60 : '') : h + m / 60);
+                }} style={{ width: '100%' }} />
+                <span>h</span>
+                <input type="number" min="0" max="59" className="input-field" placeholder="M" value={targetFast === '' || isNaN(targetFast) ? "" : Math.round((targetFast % 1) * 60)} onChange={e => {
+                  const h = targetFast === '' || isNaN(targetFast) ? 0 : Math.floor(targetFast);
+                  const m = parseInt(e.target.value);
+                  setTargetFast(isNaN(m) ? (h ? h : '') : h + m / 60);
+                }} style={{ width: '100%' }} />
+                <span>m</span>
+              </div>
             </div>
           </div>
           
           {itraGuide && (
             <div style={{ fontSize: '0.85rem', color: '#6B7280', marginTop: '-8px', marginBottom: '8px' }}>
-              💡 <span style={{ fontStyle: 'italic' }}>Guide selon ITRA : {itraGuide.fastH.toFixed(1)}h</span>
+              💡 <span style={{ fontStyle: 'italic' }}>Guide selon ITRA : {formatDecimalHoursToHHMM(itraGuide.fastH)}</span>
             </div>
           )}
 

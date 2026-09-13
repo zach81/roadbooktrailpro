@@ -19,6 +19,15 @@
 // 1. GÉODÉSIE
 // ─────────────────────────────────────────────────────────────
 
+// Helpers internes ou pour formater
+export function formatDecimalHoursToHHMM(decimalHours) {
+  if (decimalHours == null || isNaN(decimalHours)) return "--h--";
+  const h = Math.floor(decimalHours);
+  const m = Math.round((decimalHours - h) * 60);
+  if (m === 60) return `${h + 1}h00`;
+  return `${h}h${m.toString().padStart(2, '0')}`;
+}
+
 /**
  * Calcule la distance entre deux coordonnées GPS (formule de Haversine).
  * @returns {number} Distance en kilomètres
@@ -443,33 +452,48 @@ export function generateSegments(
   }));
   const E = segmentsWithDx.reduce((acc, { dx }) => acc + dx, Math.max(segmentsWithDx.reduce((a, { dx }) => a + dx, 0) * 0.0001, 0.001));
 
-  // La météo ralentit la vitesse → augmente le temps → on divise p0 par weatherCoeff
-  const p0_fast = computeP0(targetFastMs, segmentsWithDx, F, E) / weatherCoeff;
-  const p0_slow = computeP0(targetSlowMs, segmentsWithDx, F, E) / weatherCoeff;
+  const baseLat = points[0]?.lat || 45.9;
+  const baseLon = points[0]?.lon || 6.8;
+
+  // PASS 1 : Calcul des facteurs de fatigue purs et estimation temporelle pour la nuit
+  let pass1X = 0;
+  const pass1Weights = segmentsWithDx.map(({ dx }) => {
+    const w = computeFatigueIntegral(pass1X, dx, E, F);
+    pass1X += dx;
+    return w;
+  });
+  const sumW1 = pass1Weights.reduce((a, b) => a + b, 0);
+
+  let tempCumulSlowMs = startTime;
+  const pass1Data = segmentsWithDx.map(({ dx, seg }, i) => {
+    const w1 = pass1Weights[i];
+    const estimatedSlowMs = targetSlowMs * (sumW1 > 0 ? (w1 / sumW1) : 0);
+    const midSlowMs = tempCumulSlowMs + estimatedSlowMs / 2;
+    const nightIntens = getNightIntensity(new Date(midSlowMs), baseLat, baseLon);
+    const nightCoeff = getNightCoefficient(nightIntens);
+    tempCumulSlowMs += estimatedSlowMs + (seg.to.pause || 0) * 60000;
+    
+    // Le poids final prend en compte la nuit. (weatherCoeff s'annule car constant global)
+    return {
+      finalWeight: w1 / nightCoeff,
+      nightIntens
+    };
+  });
+  
+  const sumFinalWeights = pass1Data.reduce((a, b) => a + b.finalWeight, 0);
 
   // ── PHASE 3 : Calcul segment par segment ─────────────────────
   let currentX = 0;
   let cumulFastMs = startTime;
   let cumulSlowMs = startTime;
 
-  const baseLat = points[0]?.lat || 45.9;
-  const baseLon = points[0]?.lon || 6.8;
-
-  return segmentsWithDx.map(({ dx, seg }) => {
+  return segmentsWithDx.map(({ dx, seg }, i) => {
     const modifier = (seg.to.time_modifier || 100) / 100.0;
-
-    // Intégrale de fatigue analytique
-    const fatigueFactor = computeFatigueIntegral(currentX, dx, E, F);
-
-    // Coefficient de nuit estimé au milieu de l'intervalle de temps (ETA lent)
-    const midSlowMs = cumulSlowMs + (p0_slow * fatigueFactor) / 2;
-    const nightIntens = getNightIntensity(new Date(midSlowMs), baseLat, baseLon);
-    const nightCoeff = getNightCoefficient(nightIntens);
-
-    // Temps segment : p0 × fatigue × (1/nightCoeff)
-    // nightCoeff < 1 → on est plus lent → on divise
-    const segmentFastMs = (p0_fast * fatigueFactor) / nightCoeff;
-    const segmentSlowMs = (p0_slow * fatigueFactor) / nightCoeff;
+    
+    const pData = pass1Data[i];
+    const segmentFastMs = sumFinalWeights > 0 ? targetFastMs * (pData.finalWeight / sumFinalWeights) : 0;
+    const segmentSlowMs = sumFinalWeights > 0 ? targetSlowMs * (pData.finalWeight / sumFinalWeights) : 0;
+    const nightIntens = pData.nightIntens;
 
     cumulFastMs += segmentFastMs;
     cumulSlowMs += segmentSlowMs;
