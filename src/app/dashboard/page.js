@@ -7,7 +7,6 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { parseGPX, readFileAsText } from "@/lib/gpxService";
 import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Map as MapIcon, ChevronRight } from "lucide-react";
-import { officialRaces } from "@/data/officialRaces";
 import styles from "./dashboard.module.css";
 
 export default function Dashboard() {
@@ -19,6 +18,7 @@ export default function Dashboard() {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [showOfficialModal, setShowOfficialModal] = useState(false);
+  const [officialRaces, setOfficialRaces] = useState([]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -37,6 +37,15 @@ export default function Dashboard() {
           data.push({ id: doc.id, ...doc.data() });
         });
         setRoadbooks(data);
+
+        // Fetch official traces
+        const officialQ = query(collection(db, "official_traces"));
+        const officialSnap = await getDocs(officialQ);
+        const officialData = [];
+        officialSnap.forEach((doc) => {
+          officialData.push({ id: doc.id, ...doc.data() });
+        });
+        setOfficialRaces(officialData);
       } catch (err) {
         console.error("Erreur lors de la récupération des roadbooks", err);
       } finally {
@@ -90,7 +99,7 @@ export default function Dashboard() {
       setUploading(true);
       setShowOfficialModal(false);
       
-      const response = await fetch(`/traces/${race.gpxFile}`);
+      const response = await fetch(race.gpxUrl);
       if (!response.ok) throw new Error("Fichier introuvable");
       const gpxText = await response.text();
       

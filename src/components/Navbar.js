@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useNavbarActions } from '@/context/NavbarActionsContext';
-import { LogOut, User, Map, HelpCircle, Settings } from 'lucide-react';
+import { LogOut, User, Map, HelpCircle, Settings, Shield } from 'lucide-react';
 import styles from './Navbar.module.css';
 
 export default function Navbar() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, isAdmin, logout } = useAuth();
   const { actions } = useNavbarActions();
 
   const router = useRouter();
@@ -43,6 +43,11 @@ export default function Navbar() {
           {currentUser ? (
             <>
               <div className={styles.userMenu}>
+                {isAdmin && (
+                  <Link href="/admin" className={styles.helpLink} title="Administration">
+                    <Shield size={18} />
+                  </Link>
+                )}
                 <Link href="/help" className={styles.helpLink} title="Guide & Aide">
                   <HelpCircle size={18} />
                 </Link>

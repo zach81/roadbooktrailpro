@@ -20,6 +20,7 @@ export function useAuth() {
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Sign up with Email
@@ -65,7 +66,27 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
+        if (user.email && adminEmails.includes(user.email.toLowerCase())) {
+          setIsAdmin(true);
+        } else {
+          try {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists() && userDoc.data().role === 'admin') {
+              setIsAdmin(true);
+            } else {
+              setIsAdmin(false);
+            }
+          } catch (e) {
+            console.error("Error fetching user role", e);
+            setIsAdmin(false);
+          }
+        }
+      } else {
+        setIsAdmin(false);
+      }
       setCurrentUser(user);
       setLoading(false);
     });
@@ -75,6 +96,7 @@ export function AuthProvider({ children }) {
 
   const value = {
     currentUser,
+    isAdmin,
     loading,
     signup,
     login,
