@@ -603,11 +603,11 @@ export function estimateTimeFromITRA(itraIndex, kmEffort, fatiguePercent = 15) {
   if (!itraIndex || itraIndex <= 0 || !kmEffort || kmEffort <= 0) return null;
 
   // Modèle empirique affiné (Riegel) calibré sur une distance de 71 ke (ex: Madeloc 45km/2600m+)
-  const baseSpeed = 1.0 + (itraIndex / 1000) * 19.0; 
+  const baseSpeed = 2.5 + (itraIndex / 1000) * 16.5; 
   
   // Exposant de fatigue de Riegel (1.0 = aucune perte de vitesse avec la distance)
   // Plus l'ITRA est faible, plus la vitesse s'effondre sur les très longues distances.
-  const timeExponent = 1.0 + ((1000 - itraIndex) / 1000) * 0.9;
+  const timeExponent = 1.05 + ((1000 - itraIndex) / 1000) * 0.65;
   
   // Temps de base pour un effort de 71 ke
   const baseTime71 = 71 / baseSpeed;
