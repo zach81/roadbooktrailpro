@@ -103,14 +103,18 @@ export default function Dashboard() {
       if (!response.ok) throw new Error("Fichier introuvable");
       const gpxText = await response.text();
       
-      const { stats, points, waypoints } = await parseGPX(gpxText);
+      const { stats, points, waypoints: gpxWaypoints } = await parseGPX(gpxText);
+      
+      const importedWaypoints = race.waypoints ? JSON.parse(race.waypoints) : gpxWaypoints;
       
       const docRef = await addDoc(collection(db, "roadbooks"), {
         userId: currentUser.uid,
         name: race.name,
+        officialDistance: race.distance || 0,
+        officialElevation: race.elevation || 0,
         stats,
         points: JSON.stringify(points),
-        waypoints: JSON.stringify(waypoints),
+        waypoints: JSON.stringify(importedWaypoints),
         segments: [],
         createdAt: new Date(),
       });

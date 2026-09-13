@@ -10,8 +10,7 @@ import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, 
 import Link from "next/link";
 import styles from "./editor.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromVMA, estimateTimeFromITRA, calculateKmEffort } from "@/lib/roadbookCalculator";
-import ElevationProfile from '@/components/ElevationProfile';
-import SegmentElevationProfile from '@/components/SegmentElevationProfile';
+
 import DisplaySettings, { useDisplaySettings } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
 
@@ -19,6 +18,16 @@ import { useNavbarActions } from "@/context/NavbarActionsContext";
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
   ssr: false,
   loading: () => <div className={styles.mapLoading}><Loader2 className="lucide-spin" size={32} /> Chargement de la carte...</div>
+});
+
+const ElevationProfile = dynamic(() => import('@/components/ElevationProfile'), { 
+  ssr: false,
+  loading: () => <div className={styles.mapLoading}><Loader2 className="lucide-spin" size={32} /> Chargement du profil...</div>
+});
+
+const SegmentElevationProfile = dynamic(() => import('@/components/SegmentElevationProfile'), { 
+  ssr: false,
+  loading: () => <div className={styles.mapLoading}><Loader2 className="lucide-spin" size={32} /> Chargement du profil...</div>
 });
 
 export default function RoadbookEditor() {
