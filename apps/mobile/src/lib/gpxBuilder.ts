@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 export async function generateAndShareGPX(roadbook: any) {
   try {
     const header = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="TrailRoadbookPro" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="mykairn" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
     <name>${roadbook.title}</name>
   </metadata>`;

@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * TrailRoadbookPro — Moteur de Calcul Scientifique
+ * mykairn — Moteur de Calcul Scientifique
  * ============================================================
  *
  * Modèles utilisés :

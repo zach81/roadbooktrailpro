@@ -14,7 +14,7 @@ const sections = [
     content: [
       {
         subtitle: "Comment créer votre premier roadbook ?",
-        text: `TrailRoadbookPro transforme votre fichier GPX en un plan de marche complet et scientifique. Voici le workflow recommandé :`,
+        text: `mykairn transforme votre fichier GPX en un plan de marche complet et scientifique. Voici le workflow recommandé :`,
         steps: [
           "Importez votre fichier GPX depuis le tableau de bord.",
           "Renseignez votre profil coureur : l'Index ITRA peut servir de guide pour vos estimations.",
@@ -385,7 +385,7 @@ export default function HelpPage() {
             Guide & Documentation
           </h1>
           <p className={styles.subtitle}>
-            Comprendre toutes les fonctions de TrailRoadbookPro — Calculs scientifiques, navigation, nutrition.
+            Comprendre toutes les fonctions de mykairn — Calculs scientifiques, navigation, nutrition.
           </p>
         </div>
 
@@ -408,7 +408,7 @@ export default function HelpPage() {
       </main>
 
       <footer className={styles.footer}>
-        <p>TrailRoadbookPro — Basé sur les modèles : Minetti (2002), Périard (2015), Jared Ward (2017)</p>
+        <p>mykairn — Basé sur les modèles : Minetti (2002), Périard (2015), Jared Ward (2017)</p>
         <Link href="/dashboard" className="btn btn-primary" style={{ marginTop: '16px' }}>
           Retour au tableau de bord
         </Link>

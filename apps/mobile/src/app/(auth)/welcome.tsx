@@ -17,7 +17,7 @@ export default function WelcomeScreen() {
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.content}>
           <ThemedText type="title" style={styles.title}>
-            TrailRoadbookPro
+            mykairn
           </ThemedText>
           <ThemedText style={styles.subtitle}>
             Préparez, gérez et dominez votre prochaine course.

@@ -36,9 +36,6 @@ export default function Home() {
       {/* Hero Section */}
       <section className={styles.heroSection}>
         <div className={styles.heroContent}>
-          <div className={styles.badge}>
-            <Zap size={14} /> Nouvelle version Pro
-          </div>
           <h1 className={styles.title}>
             Votre <span className={styles.highlight}>Roadbook</span> de Trail
             <br />généré en quelques clics.
@@ -58,22 +55,11 @@ export default function Home() {
           </div>
           
           <div className={styles.trusted}>
-            <p>Utilisé par des centaines de finishers sur UTMB®, Diagonale des Fous, et plus.</p>
+            <p>Créez la stratégie parfaite pour votre prochain ultra-trail.</p>
           </div>
         </div>
 
-        <div className={styles.heroImageWrapper}>
-          <div className={styles.mockupContainer}>
-            <Image 
-              src="/mockup.jpg" 
-              alt="Interface de TrailRoadbookPro" 
-              width={800} 
-              height={600} 
-              className={styles.mockupImage}
-              priority
-            />
-          </div>
-        </div>
+
       </section>
 
       {/* How it works */}
@@ -131,12 +117,12 @@ export default function Home() {
       {/* Final CTA */}
       <section className={styles.finalCta}>
         <div className={styles.ctaCard}>
-          <h2>Prêt à écraser votre prochain objectif ?</h2>
-          <p>Créez votre premier roadbook en moins de 2 minutes. C'est gratuit.</p>
+          <h2>Prêt à préparer votre prochain objectif ?</h2>
+          <p>Créez votre premier roadbook en quelques minutes.</p>
           <ul className={styles.ctaChecklist}>
-            <li><CheckCircle2 size={18} /> Pas de carte de crédit requise</li>
+            <li><CheckCircle2 size={18} /> Entièrement gratuit</li>
             <li><CheckCircle2 size={18} /> Roadbooks illimités</li>
-            <li><CheckCircle2 size={18} /> Export facile</li>
+            <li><CheckCircle2 size={18} /> Facile à utiliser</li>
           </ul>
           <Link href="/register" className={`btn btn-primary ${styles.hugeCta}`}>
             Créer mon compte maintenant
