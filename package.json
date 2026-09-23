@@ -1,31 +1,17 @@
 {
-  "name": "trail-roadbook-pro",
-  "version": "0.1.0",
+  "name": "trail-roadbook-pro-monorepo",
   "private": true,
+  "packageManager": "npm@11.19.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
-    "chart.js": "^4.5.1",
-    "chartjs-plugin-zoom": "^2.2.0",
-    "firebase": "^12.19.0",
-    "gpxparser": "^3.0.8",
-    "leaflet": "^1.9.4",
-    "lucide-react": "^1.44.0",
-    "next": "16.3.4",
-    "react": "19.2.8",
-    "react-chartjs-2": "^5.3.1",
-    "react-dom": "19.2.8",
-    "react-leaflet": "^5.0.0",
-    "suncalc": "^2.0.2",
-    "tailwindcss": "^4.3.3"
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint"
   },
   "devDependencies": {
-    "eslint": "^9",
-    "eslint-config-next": "16.3.4"
+    "turbo": "latest"
   }
 }

@@ -1,0 +1,12 @@
+
+> mobile@1.0.0 lint
+> expo lint
+
+
+C:\Users\Shadow\Documents\TrailRoadbookPro\apps\mobile\src\app\(auth)\welcome.tsx
+  2:39  warning  'C:\Users\Shadow\Documents\TrailRoadbookPro\node_modules\react-native\index.js' imported multiple times  import/no-duplicates
+  8:32  warning  'C:\Users\Shadow\Documents\TrailRoadbookPro\node_modules\react-native\index.js' imported multiple times  import/no-duplicates
+
+✖ 2 problems (0 errors, 2 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+
