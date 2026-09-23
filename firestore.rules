@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Fonction utilitaire pour vérifier si l'utilisateur est admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // ==========================================
+    // 1. COLLECTION USERS
+    // ==========================================
+    match /users/{userId} {
+      // Tout utilisateur connecté peut chercher un utilisateur (par exemple, par email pour partager un roadbook)
+      allow read: if request.auth != null;
+      
+      // Un utilisateur ne peut modifier que son propre profil
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ==========================================
+    // 2. COLLECTION ROADBOOKS
+    // ==========================================
+    match /roadbooks/{roadbookId} {
+      // Lecture : l'utilisateur doit être connecté
+      allow read: if request.auth != null;
+      
+      // Création : l'utilisateur doit être le propriétaire du roadbook qu'il crée
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      
+      // Mise à jour / Suppression : doit être le propriétaire OU un administrateur
+      allow update, delete: if request.auth != null && (
+        request.auth.uid == resource.data.userId || 
+        isAdmin()
+      );
+    }
+
+    // ==========================================
+    // 3. COLLECTION OFFICIAL TRACES
+    // ==========================================
+    match /official_traces/{traceId} {
+      // Tout utilisateur connecté peut lire les traces officielles
+      allow read: if request.auth != null;
+      
+      // Seul un admin peut créer, modifier ou supprimer des traces officielles
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    // ==========================================
+    // 4. COLLECTION NUTRITION PRODUCTS
+    // ==========================================
+    match /nutrition_products/{productId} {
+      // Tout utilisateur connecté peut lire les produits nutrition
+      allow read: if request.auth != null;
+      
+      // Création : soit un utilisateur crée un produit personnel, soit un admin crée un produit officiel
+      allow create: if request.auth != null && (
+        request.auth.uid == request.resource.data.userId || 
+        isAdmin()
+      );
+      
+      // Modification / Suppression : doit être le propriétaire du produit (produit perso) OU un admin (produits officiels)
+      allow update, delete: if request.auth != null && (
+        request.auth.uid == resource.data.userId || 
+        isAdmin()
+      );
+    }
+  }
+}

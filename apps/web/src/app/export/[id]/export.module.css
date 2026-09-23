@@ -184,6 +184,28 @@
     border: 1px solid #F59E0B;
     background: transparent;
   }
+  
+  .table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  
+  .table tr {
+    break-inside: avoid;
+  }
+  
+  .table th {
+    background-color: #f3f4f6 !important;
+    color: #000;
+    border-bottom: 2px solid #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .table td {
+    border-bottom: 1px solid #ddd;
+    color: #000;
+  }
 }
 
 @media (max-width: 768px) {

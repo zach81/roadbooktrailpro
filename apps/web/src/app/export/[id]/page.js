@@ -4,12 +4,18 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import { ArrowLeft, Map, Clock, Navigation, Droplets, Activity, Package, Utensils, Loader2, Settings } from "lucide-react";
-import styles from "./roadbook.module.css";
+import styles from "./export.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, calculateTraceStats, findOptimalElevationThreshold } from "@/lib/roadbookCalculator";
-import DisplaySettings, { useDisplaySettings } from "@/components/DisplaySettings";
+import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
+import dynamic from 'next/dynamic';
+
+const ElevationProfile = dynamic(() => import('@/components/ElevationProfile'), { 
+  ssr: false,
+  loading: () => <div className={styles.mapLoading}><Loader2 className="lucide-spin" size={32} /> Chargement du profil...</div>
+});
 
 function formatTime(dateStr) {
   if (!dateStr) return "--:--";
@@ -25,17 +31,34 @@ function round10(num) {
   return Math.round(num / 10) * 10;
 }
 
+function formatDurationMs(ms) {
+  if (!ms) return "0h00";
+  const totalMins = Math.floor(ms / 60000);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return `${h}h${m.toString().padStart(2, '0')}`;
+}
+
 export default function RoadbookSummary() {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const router = useRouter();
   const { id } = useParams();
-  const { config: displayConfig, updateConfig, isLoaded: displayLoaded } = useDisplaySettings("roadbookViewConfig");
+  
+  const [displayConfig, setDisplayConfig] = useState(defaultDisplayConfig);
+  const [displayLoaded, setDisplayLoaded] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [roadbook, setRoadbook] = useState(null);
   const [segments, setSegments] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [weather, setWeather] = useState("modere");
+
+  const [printConfig, setPrintConfig] = useState({
+    table: true,
+    segmentProfiles: true,
+    segmentProfileTimes: true,
+    nutrition: true
+  });
 
   useEffect(() => {
     if (!currentUser) {
@@ -50,13 +73,21 @@ export default function RoadbookSummary() {
         
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (data.userId !== currentUser.uid) {
+          if (data.userId !== currentUser.uid && !isAdmin) {
             router.push("/dashboard");
             return;
           }
           
           setRoadbook({ id: docSnap.id, ...data });
-          
+          if (data.displayConfig) {
+            try {
+              setDisplayConfig({ ...defaultDisplayConfig, ...JSON.parse(data.displayConfig) });
+            } catch (e) {
+              console.error("Error parsing displayConfig", e);
+            }
+          }
+          setDisplayLoaded(true);
+
           if (data.inventory) {
             setInventory(JSON.parse(data.inventory));
           }
@@ -107,6 +138,19 @@ export default function RoadbookSummary() {
 
     fetchData();
   }, [id, currentUser, router]);
+
+  const updateConfig = async (key, value) => {
+    const newConfig = { ...displayConfig, [key]: value };
+    setDisplayConfig(newConfig);
+    try {
+      const docRef = doc(db, "roadbooks", id);
+      await updateDoc(docRef, {
+        displayConfig: JSON.stringify(newConfig)
+      });
+    } catch (err) {
+      console.error("Erreur lors de la sauvegarde des paramètres d'affichage", err);
+    }
+  };
 
   if (loading) {
     return <div className={styles.container} style={{textAlign: 'center', paddingTop: '4rem'}}><Loader2 className="lucide-spin" size={32} /> Chargement du roadbook...</div>;
@@ -191,6 +235,29 @@ export default function RoadbookSummary() {
         </div>
       </div>
 
+      <div className={styles.printSettings} style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '24px' }} className="no-print">
+        <strong>Options d'impression :</strong>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={printConfig.table} onChange={e => setPrintConfig({...printConfig, table: e.target.checked})} />
+          Tableau de marche
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={printConfig.segmentProfiles} onChange={e => setPrintConfig({...printConfig, segmentProfiles: e.target.checked})} />
+          Profils par segment
+        </label>
+        {printConfig.segmentProfiles && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginLeft: '-8px' }}>
+            <input type="checkbox" checked={printConfig.segmentProfileTimes} onChange={e => setPrintConfig({...printConfig, segmentProfileTimes: e.target.checked})} />
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Afficher les temps</span>
+          </label>
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={printConfig.nutrition} onChange={e => setPrintConfig({...printConfig, nutrition: e.target.checked})} />
+          Nutrition
+        </label>
+      </div>
+
+      {printConfig.table && (
       <section className={styles.section}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 className={styles.sectionTitle} style={{ margin: 0 }}><Navigation size={20} /> Tableau de Marche Global</h2>
@@ -215,12 +282,6 @@ export default function RoadbookSummary() {
               {segments.map((seg, i) => {
                 const totalDNeg = segments.slice(0, i + 1).reduce((acc, s) => acc + Math.abs(s.elevationNeg || 0), 0);
                 const totalDurationMs = segments.slice(0, i + 1).reduce((acc, s) => acc + s.durationSlowMs, 0);
-                const formatDurationMs = (ms) => {
-                  const totalMins = Math.floor(ms / 60000);
-                  const h = Math.floor(totalMins / 60);
-                  const m = totalMins % 60;
-                  return `${h}h${m.toString().padStart(2, '0')}`;
-                };
                 
                 return (
                 <tr key={i}>
@@ -249,7 +310,43 @@ export default function RoadbookSummary() {
           </table>
         </div>
       </section>
+      )}
 
+      {printConfig.segmentProfiles && segments.length > 0 && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 className={styles.sectionTitle} style={{ borderBottom: 'none' }}><Activity size={20} /> Profils par Segment</h2>
+          {segments.map((seg, i) => {
+            const totalDurationMs = segments.slice(0, i + 1).reduce((acc, s) => acc + s.durationSlowMs, 0);
+            return (
+            <div key={i} style={{ marginBottom: '40px', pageBreakInside: 'avoid', textAlign: 'center' }}>
+              <div style={{ display: 'inline-block', width: '100%', maxWidth: '750px', textAlign: 'left', padding: '0 10px', boxSizing: 'border-box' }}>
+                <h3 style={{ fontSize: '1.2rem', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '4px' }}>
+                  <span>{seg.from.name} ➔ {seg.to.name}</span>
+                  <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>
+                    {seg.distance.toFixed(1)} km | +{Math.round(seg.elevationPos)}m | -{Math.round(seg.elevationNeg)}m
+                  </span>
+                </h3>
+                {printConfig.segmentProfileTimes && (
+                  <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', gap: '16px', justifyContent: 'center' }}>
+                    <span><strong>T. Inter:</strong> {formatDurationMs(seg.durationSlowMs)}</span>
+                    <span><strong>T. Total:</strong> {formatDurationMs(totalDurationMs)}</span>
+                    {seg.to.cutoffTime && <span style={{ color: '#EF4444' }}><strong>BH:</strong> {seg.to.cutoffTime}</span>}
+                  </div>
+                )}
+                <div style={{ height: '220px', width: '100%', background: 'transparent' }}>
+                  <ElevationProfile 
+                    points={seg.points} 
+                    waypoints={[seg.from, seg.to]} 
+                  />
+                </div>
+              </div>
+            </div>
+          )})}
+        </div>
+      )}
+
+      {printConfig.nutrition && (
+      <>
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}><Package size={20} /> Plan d'Assistance & Logistique</h2>
         {assistancePoints.length === 0 ? (
@@ -311,6 +408,8 @@ export default function RoadbookSummary() {
           )}
         </div>
       </section>
+      </>
+      )}
 
     </div>
   );

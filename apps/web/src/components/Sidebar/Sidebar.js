@@ -19,11 +19,7 @@ export default function Sidebar() {
         Dashboard
       </Link>
       
-      <Link href="/roadbooks" className={`${styles.navItem} ${pathname === '/roadbooks' ? styles.active : ''}`}>
-        <Map size={20} className={styles.icon} />
-        Mes Roadbooks
-      </Link>
-      
+
       <Link href="/official-traces" className={`${styles.navItem} ${pathname === '/official-traces' ? styles.active : ''}`}>
         <Compass size={20} className={styles.icon} />
         Traces Officielles

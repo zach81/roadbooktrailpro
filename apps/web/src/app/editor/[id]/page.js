@@ -11,7 +11,7 @@ import Link from "next/link";
 import styles from "./editor.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromITRA, calculateKmEffort, formatDecimalHoursToHHMM } from "@/lib/roadbookCalculator";
 
-import DisplaySettings, { useDisplaySettings } from "@/components/DisplaySettings";
+import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
 
 // Dynamic import for Leaflet Map to avoid SSR issues
@@ -31,11 +31,13 @@ const SegmentElevationProfile = dynamic(() => import('@/components/SegmentElevat
 });
 
 export default function RoadbookEditor() {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const router = useRouter();
   const params = useParams();
   const { id } = params;
-  const { config: displayConfig, updateConfig, isLoaded: displayLoaded } = useDisplaySettings("roadbookViewConfig");
+  
+  const [displayConfig, setDisplayConfig] = useState(defaultDisplayConfig);
+  const [displayLoaded, setDisplayLoaded] = useState(false);
   const { setActions } = useNavbarActions();
 
   const [roadbook, setRoadbook] = useState(null);
@@ -124,7 +126,7 @@ export default function RoadbookEditor() {
         const docRef = doc(db, "roadbooks", id);
         const docSnap = await getDoc(docRef);
         
-        if (docSnap.exists() && docSnap.data().userId === currentUser.uid) {
+        if (docSnap.exists() && (docSnap.data().userId === currentUser.uid || isAdmin)) {
           const data = docSnap.data();
           setRoadbook(data);
           setEditName(data.name || "");
@@ -142,6 +144,15 @@ export default function RoadbookEditor() {
           if (data.weight !== undefined) setWeight(data.weight.toString());
           if (data.weather) setWeather(data.weather);
           if (data.itraIndex) setItraIndex(data.itraIndex);
+          
+          if (data.displayConfig) {
+            try {
+              setDisplayConfig({ ...defaultDisplayConfig, ...JSON.parse(data.displayConfig) });
+            } catch (e) {
+              console.error("Error parsing displayConfig", e);
+            }
+          }
+          setDisplayLoaded(true);
           
           // Récupération des valeurs par défaut du profil utilisateur si manquantes
           if (!data.itraIndex || data.weight === undefined) {
@@ -271,6 +282,7 @@ export default function RoadbookEditor() {
         itraIndex: itraIndex,
         descentThreshold: parseFloat(descentThreshold) || 15,
         inventory: JSON.stringify(inventory),
+        displayConfig: JSON.stringify(displayConfig),
       });
       alert("Sauvegardé avec succès !");
     } catch (err) {
@@ -279,24 +291,25 @@ export default function RoadbookEditor() {
     } finally {
       setSaving(false);
     }
-  }, [id, editName, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, inventory]);
+  }, [id, editName, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, inventory, displayConfig]);
 
   // Inject navbar actions (sticky bar)
   useEffect(() => {
+    const updateConfig = async (key, value) => {
+      const newConfig = { ...displayConfig, [key]: value };
+      setDisplayConfig(newConfig);
+      try {
+        const docRef = doc(db, "roadbooks", id);
+        await updateDoc(docRef, { displayConfig: JSON.stringify(newConfig) });
+      } catch (e) {
+        console.error("Error saving display settings", e);
+      }
+    };
+
     setActions(
       <>
         {displayLoaded && <DisplaySettings config={displayConfig} updateConfig={updateConfig} />}
-        <button 
-          onClick={async () => {
-            await saveRoadbook();
-            router.push(`/roadbook/${id}`);
-          }}
-          disabled={saving}
-          className="btn btn-secondary" 
-          style={{fontSize:'0.85rem', padding:'6px 14px'}}
-        >
-          {saving ? <Loader2 className="lucide-spin" size={16} /> : "Tableau de marche"}
-        </button>
+
         <button onClick={saveRoadbook} disabled={saving} className="btn btn-primary" style={{fontSize:'0.85rem', padding:'6px 14px'}}>
           {saving ? <Loader2 className="lucide-spin" size={16} /> : <Save size={16} />}
           {saving ? "Sauvegarde..." : "Sauvegarder"}
@@ -373,6 +386,20 @@ export default function RoadbookEditor() {
           </div>
         </div>
         
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button 
+            onClick={async () => {
+              await saveRoadbook();
+              router.push(`/export/${id}`);
+            }}
+            disabled={saving}
+            className="btn btn-primary" 
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            {saving ? <Loader2 className="lucide-spin" size={16} /> : <Navigation size={16} />}
+            Exporter
+          </button>
+        </div>
       </header>
 
       <div className={styles.statsBar}>

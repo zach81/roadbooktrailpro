@@ -248,7 +248,9 @@ export default function ElevationProfile({ points, segments, onAddWaypointByDist
       layout: {
         padding: {
           top: 10,
-          bottom: 10
+          bottom: 10,
+          left: 10,
+          right: 24
         }
       },
       plugins: {
