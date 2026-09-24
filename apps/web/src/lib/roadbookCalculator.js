@@ -199,18 +199,18 @@ export function calculateKmEffort(
   descentThresholdPercent = 15,
   avgDescentSlopePct = 0
 ) {
-  // --- Coût montée : standard ITRA ---
-  const upCost = elePos / 100;
+  // --- Coût montée : ajusté pour être plus pénalisant (+25% par rapport au standard ITRA) ---
+  const upCost = elePos / 80;
 
   // --- Coût descente : transition douce via sigmoïde ---
-  // softCoeff ∈ [1/150, 1/80] selon la pente
+  // softCoeff ∈ [1/215, 1/115] selon la pente (-30% de coût par rapport au modèle précédent)
   // k=0.8 donne une transition sur ~6% de pente (réaliste)
   const k = 0.8;
   const slope = avgDescentSlopePct || 0;
   const sigmoid = 1 / (1 + Math.exp(-k * (slope - descentThresholdPercent)));
-  // sigmoid ≈ 0 → descente douce → coeff ≈ 1/150
-  // sigmoid ≈ 1 → descente raide → coeff ≈ 1/80
-  const downCoeff = (1 / 150) + sigmoid * ((1 / 80) - (1 / 150));
+  // sigmoid ≈ 0 → descente douce → coeff ≈ 1/215
+  // sigmoid ≈ 1 → descente raide → coeff ≈ 1/115
+  const downCoeff = (1 / 215) + sigmoid * ((1 / 115) - (1 / 215));
   const downCost = eleNeg * downCoeff;
 
   return distance + upCost + downCost;
