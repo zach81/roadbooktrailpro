@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LayoutDashboard, Map, Compass, Settings, Apple, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Map, Compass, Settings, Apple, HelpCircle, Calendar } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
 export default function Sidebar() {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const pathname = usePathname();
 
   if (!currentUser) return null;
@@ -18,6 +18,14 @@ export default function Sidebar() {
         <LayoutDashboard size={20} className={styles.icon} />
         Dashboard
       </Link>
+      
+      {/* Lien vers le Plan Builder (Réservé aux admins) */}
+      {isAdmin && (
+        <a href="/coach" className={`${styles.navItem} ${pathname.startsWith('/coach') ? styles.active : ''}`}>
+          <Calendar size={20} className={styles.icon} />
+          Coaching & Plans
+        </a>
+      )}
       
 
       <Link href="/official-traces" className={`${styles.navItem} ${pathname === '/official-traces' ? styles.active : ''}`}>
