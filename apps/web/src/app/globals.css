@@ -137,12 +137,11 @@ a:hover { color: var(--color-primary-hover); }
 .layout-with-sidebar {
   display: flex;
   flex: 1;
-  overflow: hidden;
+  align-items: flex-start;
 }
 
 .main-content {
   flex: 1;
-  overflow-y: auto;
   padding-top: 2rem;
   padding-bottom: 4rem;
 }

@@ -4,15 +4,29 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, or } from "firebase/firestore";
 import dynamic from 'next/dynamic';
-import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2, Coffee } from "lucide-react";
+import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2, Coffee, Plus } from "lucide-react";
 import Link from "next/link";
 import styles from "./editor.module.css";
-import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, estimateTimeFromITRA, calculateKmEffort, formatDecimalHoursToHHMM } from "@/lib/roadbookCalculator";
+import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, calculateKmEffort, formatDecimalHoursToHHMM, deriveConfigFromITRA } from "@/lib/roadbookCalculator";
 
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
+
+const DEFAULT_NUTRITION_PRODUCTS = [
+  { id: "gen-1", name: "Gel Énergétique", brand: "Générique", carbs: 22, sodium: 50, water: 0, caffeine: 0 },
+  { id: "gen-2", name: "Gel Énergétique (+ Caféine)", brand: "Générique", carbs: 22, sodium: 50, water: 0, caffeine: 50 },
+  { id: "gen-3", name: "Barre Énergétique", brand: "Générique", carbs: 30, sodium: 100, water: 0, caffeine: 0 },
+  { id: "gen-4", name: "Compote", brand: "Générique", carbs: 15, sodium: 10, water: 0, caffeine: 0 },
+  { id: "gen-5", name: "Boisson Iso (500ml)", brand: "Générique", carbs: 30, sodium: 300, water: 500, caffeine: 0 },
+  { id: "gen-6", name: "Eau Pure (500ml)", brand: "Générique", carbs: 0, sodium: 0, water: 500, caffeine: 0 },
+  { id: "gen-7", name: "Eau Gazeuse/St-Yorre (500ml)", brand: "Générique", carbs: 0, sodium: 350, water: 500, caffeine: 0 },
+  { id: "gen-8", name: "Coca Cola (150ml)", brand: "Générique", carbs: 16, sodium: 15, water: 150, caffeine: 15 },
+  { id: "gen-9", name: "Bouillon Salé (200ml)", brand: "Générique", carbs: 2, sodium: 400, water: 200, caffeine: 0 },
+  { id: "gen-10", name: "Purée Salée", brand: "Générique", carbs: 20, sodium: 250, water: 0, caffeine: 0 },
+  { id: "gen-11", name: "Quartier (Banane/Orange)", brand: "Générique", carbs: 15, sodium: 0, water: 0, caffeine: 0 }
+];
 
 // Dynamic import for Leaflet Map to avoid SSR issues
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
@@ -43,18 +57,23 @@ export default function RoadbookEditor() {
   const [roadbook, setRoadbook] = useState(null);
   const [points, setPoints] = useState([]);
   const [waypoints, setWaypoints] = useState([]);
+  const [dbProducts, setDbProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editName, setEditName] = useState("");
   
-  const [targetFast, setTargetFast] = useState(28);
-  const targetSlow = targetFast * 1.2; // Computed slow target for internal usage
+  const [targetTime, setTargetTime] = useState("");
   const [fatiguePercent, setFatiguePercent] = useState(15);
   const [startTime, setStartTime] = useState("");
   const [officialDistance, setOfficialDistance] = useState("");
   const [officialElevation, setOfficialElevation] = useState("");
   const [itraIndex, setItraIndex] = useState("");
   const [descentThreshold, setDescentThreshold] = useState(15);
+  const [walkThreshold, setWalkThreshold] = useState(12);
+  const [upCostDivider, setUpCostDivider] = useState(80);
+  const [downCostModifier, setDownCostModifier] = useState(1.0);
+  const [pacingStrategy, setPacingStrategy] = useState("regular");
+  const [globalTechnicality, setGlobalTechnicality] = useState(2);
   const [carbTarget, setCarbTarget] = useState("60");
   const [sodiumTarget, setSodiumTarget] = useState("400");
   const [waterTarget, setWaterTarget] = useState("500");
@@ -73,6 +92,7 @@ export default function RoadbookEditor() {
   const [newWpType, setNewWpType] = useState("point");
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [showNutritionModal, setShowNutritionModal] = useState(false);
 
   useEffect(() => {
     if (points.length > 0) {
@@ -83,13 +103,16 @@ export default function RoadbookEditor() {
       const optThreshold = (officialElevation && parseFloat(officialElevation) > 0) ? findOptimalElevationThreshold(points, parseFloat(officialElevation)) : 5;
       
       const newSegments = generateSegments(
-        points, enrichedWp, targetFast, targetSlow, fatiguePercent,
+        points, enrichedWp, parseFloat(itraIndex) || 600, fatiguePercent,
         startTime, optThreshold, distFactor,
-        weather, parseFloat(descentThreshold) || 15
+        weather, parseFloat(descentThreshold) || 15, parseFloat(walkThreshold) || 12,
+        targetTime ? parseFloat(targetTime) : null,
+        parseFloat(upCostDivider) || 80, parseFloat(downCostModifier) || 1.0,
+        parseFloat(globalTechnicality) || 2, pacingStrategy
       );
       setSegments(newSegments);
     }
-  }, [points, waypoints, targetFast, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold]);
+  }, [points, waypoints, itraIndex, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold, walkThreshold, targetTime, upCostDivider, downCostModifier, globalTechnicality, pacingStrategy]);
 
   const formatTime = (isoString) => {
     if (!isoString) return "--h--";
@@ -132,18 +155,12 @@ export default function RoadbookEditor() {
           setEditName(data.name || "");
           setPoints(JSON.parse(data.points || "[]"));
           
-          if (data.targetFast) setTargetFast(data.targetFast);
-          if (data.fatiguePercent !== undefined) setFatiguePercent(data.fatiguePercent);
+          if (data.targetTime) setTargetTime(data.targetTime);
+          else if (data.targetFast) setTargetTime(data.targetFast);
           if (data.startTime) setStartTime(data.startTime);
           if (data.officialDistance !== undefined) setOfficialDistance(data.officialDistance.toString());
           if (data.officialElevation !== undefined) setOfficialElevation(data.officialElevation.toString());
-          if (data.carbTarget !== undefined) setCarbTarget(data.carbTarget.toString());
-          if (data.sodiumTarget !== undefined) setSodiumTarget(data.sodiumTarget.toString());
-          if (data.waterTarget !== undefined) setWaterTarget(data.waterTarget.toString());
-          if (data.caffeineTarget !== undefined) setCaffeineTarget(data.caffeineTarget.toString());
-          if (data.weight !== undefined) setWeight(data.weight.toString());
           if (data.weather) setWeather(data.weather);
-          if (data.itraIndex) setItraIndex(data.itraIndex);
           
           if (data.displayConfig) {
             try {
@@ -154,20 +171,56 @@ export default function RoadbookEditor() {
           }
           setDisplayLoaded(true);
           
-          // Récupération des valeurs par défaut du profil utilisateur si manquantes
-          if (!data.itraIndex || data.weight === undefined) {
-            try {
-              const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-              if (userDoc.exists()) {
-                const userData = userDoc.data();
-                if (!data.itraIndex && userData.itraIndex) setItraIndex(userData.itraIndex.toString());
-                if (data.weight === undefined && userData.weight) setWeight(userData.weight.toString());
-              }
-            } catch (err) {
-              console.error("Impossible de charger les paramètres par défaut du profil:", err);
+          // Récupération des valeurs globales depuis le profil si non définies dans le roadbook
+          try {
+            const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              if (userData.itraIndex != null) setItraIndex(userData.itraIndex.toString());
+              else if (data.itraIndex != null) setItraIndex(data.itraIndex.toString());
+
+              if (userData.weight != null) setWeight(userData.weight.toString());
+              else if (data.weight != null) setWeight(data.weight.toString());
+
+              if (userData.carbTarget != null) setCarbTarget(userData.carbTarget.toString());
+              else if (data.carbTarget != null) setCarbTarget(data.carbTarget.toString());
+
+              if (userData.sodiumTarget != null) setSodiumTarget(userData.sodiumTarget.toString());
+              else if (data.sodiumTarget != null) setSodiumTarget(data.sodiumTarget.toString());
+
+              if (userData.waterTarget != null) setWaterTarget(userData.waterTarget.toString());
+              else if (data.waterTarget != null) setWaterTarget(data.waterTarget.toString());
+
+              if (userData.caffeineTarget != null) setCaffeineTarget(userData.caffeineTarget.toString());
+              else if (data.caffeineTarget != null) setCaffeineTarget(data.caffeineTarget.toString());
+
+              if (userData.fatiguePercent != null) setFatiguePercent(userData.fatiguePercent);
+              else if (data.fatiguePercent != null) setFatiguePercent(data.fatiguePercent);
+
+              if (userData.pacingStrategy != null) setPacingStrategy(userData.pacingStrategy);
+              else if (data.pacingStrategy != null) setPacingStrategy(data.pacingStrategy);
+
+              if (userData.globalTechnicality != null) setGlobalTechnicality(userData.globalTechnicality);
+              else if (data.globalTechnicality != null) setGlobalTechnicality(data.globalTechnicality);
+
+              if (userData.descentThreshold != null) setDescentThreshold(userData.descentThreshold);
+              else if (data.descentThreshold != null) setDescentThreshold(data.descentThreshold);
+
+              if (userData.walkThreshold != null) setWalkThreshold(userData.walkThreshold);
+              else if (data.walkThreshold != null) setWalkThreshold(data.walkThreshold);
+
+              if (userData.upCostDivider != null) setUpCostDivider(userData.upCostDivider);
+              else if (data.upCostDivider != null) setUpCostDivider(data.upCostDivider);
+
+              if (userData.downCostModifier != null) setDownCostModifier(userData.downCostModifier);
+              else if (data.downCostModifier != null) setDownCostModifier(data.downCostModifier);
             }
+          } catch (err) {
+            console.error("Impossible de charger les paramètres par défaut du profil:", err);
           }
-          if (data.descentThreshold !== undefined) setDescentThreshold(data.descentThreshold);
+          if (data.descentThreshold != null) setDescentThreshold(data.descentThreshold);
+          if (data.walkThreshold != null) setWalkThreshold(data.walkThreshold);
+          if (data.globalTechnicality != null) setGlobalTechnicality(data.globalTechnicality);
           if (data.inventory) {
             const inv = JSON.parse(data.inventory);
             setInventory(inv);
@@ -180,6 +233,21 @@ export default function RoadbookEditor() {
             id: wp.id || `wp-${i}-${Date.now()}`
           }));
           setWaypoints(parsedWp);
+
+          // Fetch nutrition products
+          try {
+            const qProducts = query(
+              collection(db, "nutrition_products"),
+              or(
+                where("isOfficial", "==", true),
+                where("userId", "==", currentUser.uid)
+              )
+            );
+            const productsSnap = await getDocs(qProducts);
+            setDbProducts(productsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          } catch (err) {
+            console.error("Erreur de chargement des produits nutrition:", err);
+          }
         } else {
           router.push("/dashboard");
         }
@@ -267,9 +335,9 @@ export default function RoadbookEditor() {
       await updateDoc(docRef, {
         name: editName,
         waypoints: JSON.stringify(waypoints),
-        targetFast: targetFast,
-        targetSlow: targetSlow,
+        targetTime: targetTime,
         fatiguePercent: fatiguePercent,
+        pacingStrategy: pacingStrategy,
         startTime: startTime,
         officialDistance: parseFloat(officialDistance) || 0,
         officialElevation: parseFloat(officialElevation) || 0,
@@ -281,6 +349,10 @@ export default function RoadbookEditor() {
         weather: weather,
         itraIndex: itraIndex,
         descentThreshold: parseFloat(descentThreshold) || 15,
+        walkThreshold: parseFloat(walkThreshold) || 12,
+        upCostDivider: parseFloat(upCostDivider) || 80,
+        downCostModifier: parseFloat(downCostModifier) || 1.0,
+        globalTechnicality: parseFloat(globalTechnicality) || 2,
         inventory: JSON.stringify(inventory),
         displayConfig: JSON.stringify(displayConfig),
       });
@@ -291,7 +363,7 @@ export default function RoadbookEditor() {
     } finally {
       setSaving(false);
     }
-  }, [id, editName, waypoints, targetFast, targetSlow, fatiguePercent, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, inventory, displayConfig]);
+  }, [id, editName, waypoints, targetTime, fatiguePercent, pacingStrategy, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, walkThreshold, upCostDivider, downCostModifier, globalTechnicality, inventory, displayConfig]);
 
   // Inject navbar actions (sticky bar)
   useEffect(() => {
@@ -324,7 +396,7 @@ export default function RoadbookEditor() {
 
 
   const addProduct = () => {
-    setInventory([...inventory, { id: nextProdId, name: 'Nouveau Produit', carbs: 0, sodium: 0, caffeine: 0 }]);
+    setInventory([...inventory, { id: nextProdId, name: '', carbs: 0, sodium: 0, caffeine: 0, water: 0 }]);
     setNextProdId(nextProdId + 1);
   };
   const removeProduct = (idToRemove) => {
@@ -365,8 +437,8 @@ export default function RoadbookEditor() {
   // Temps total estimé depuis les segments
   const totalFastMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationFastMs, 0) : 0;
   const totalSlowMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationSlowMs, 0) : 0;
-  const fmtTotalFast = totalFastMs > 0 ? formatDuration(totalFastMs) : `${targetFast}h`;
-  const fmtTotalSlow = totalSlowMs > 0 ? formatDuration(totalSlowMs) : `${targetSlow}h`;
+  const fmtTotalFast = totalFastMs > 0 ? formatDuration(totalFastMs) : (targetTime ? `${targetTime}h` : '--');
+  const fmtTotalSlow = totalSlowMs > 0 ? formatDuration(totalSlowMs) : (targetTime ? `${(targetTime * 1.2).toFixed(1)}h` : '--');
 
   return (
     <div className={styles.editorContainer}>
@@ -422,33 +494,53 @@ export default function RoadbookEditor() {
         <div className={`${styles.statBox} ${styles.statBoxTime}`}>
           <span>⚡ Objectif de course</span>
           <strong>
-            <span style={{ color: '#10B981' }}>{fmtTotalFast}</span>
+            {targetTime ? (
+              <span style={{ color: '#10B981' }}>{fmtTotalFast}</span>
+            ) : (
+              <span style={{ color: 'var(--text-secondary)' }}>Non défini</span>
+            )}
           </strong>
         </div>
       </div>
 
+      {!targetTime && (
+        <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', borderRadius: 'var(--radius-md)', border: '1px solid #F59E0B' }}>
+          <strong>⚠️ Action requise :</strong> Veuillez renseigner un <strong>Objectif Course</strong> dans les paramètres ci-dessous pour calculer les temps de passage sur chaque segment. L'Index UTMB ne sert désormais qu'à ajuster l'effort (montée, descente, fatigue).
+        </div>
+      )}
+
       <div className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', padding: '24px' }}>
         {/* Profil Coureur */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <h3 className={styles.sectionTitle}>🏃 Profil & Objectifs</h3>
+          <h3 className={styles.sectionTitle}>⏱️ Course & Objectifs</h3>
           
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+          <div className={styles.paramGroup}>
+            <label className={styles.paramLabel}>Date & Heure de départ</label>
+            <input type="datetime-local" className="input-field" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ width: '100%' }} />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Objectif Course</label>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input type="number" min="0" className="input-field" placeholder="H" value={targetFast === '' || isNaN(targetFast) ? "" : Math.floor(targetFast)} onChange={e => {
+                <input type="number" min="0" className="input-field" placeholder="H" value={targetTime === null || targetTime === '' || isNaN(targetTime) ? "" : Math.floor(targetTime)} onChange={e => {
                   const h = parseInt(e.target.value);
-                  const m = targetFast === '' || isNaN(targetFast) ? 0 : Math.round((targetFast % 1) * 60);
-                  setTargetFast(isNaN(h) ? (m ? m/60 : '') : h + m / 60);
+                  const m = targetTime === null || targetTime === '' || isNaN(targetTime) ? 0 : Math.round((targetTime % 1) * 60);
+                  setTargetTime(isNaN(h) ? (m ? m/60 : '') : h + m / 60);
                 }} style={{ width: '100%' }} />
                 <span>h</span>
-                <input type="number" min="0" max="59" className="input-field" placeholder="M" value={targetFast === '' || isNaN(targetFast) ? "" : Math.round((targetFast % 1) * 60)} onChange={e => {
-                  const h = targetFast === '' || isNaN(targetFast) ? 0 : Math.floor(targetFast);
+                <input type="number" min="0" max="59" className="input-field" placeholder="M" value={targetTime === null || targetTime === '' || isNaN(targetTime) ? "" : Math.round((targetTime % 1) * 60)} onChange={e => {
+                  const h = targetTime === null || targetTime === '' || isNaN(targetTime) ? 0 : Math.floor(targetTime);
                   const m = parseInt(e.target.value);
-                  setTargetFast(isNaN(m) ? (h ? h : '') : h + m / 60);
+                  setTargetTime(isNaN(m) ? (h ? h : '') : h + m / 60);
                 }} style={{ width: '100%' }} />
                 <span>m</span>
               </div>
+            </div>
+            
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
+              <label className={styles.paramLabel}>Cote ITRA / UTMB</label>
+              <input type="number" step="1" className="input-field" placeholder="Ex: 600" value={itraIndex} onChange={e => setItraIndex(e.target.value)} style={{ width: '100%' }} />
             </div>
           </div>
 
@@ -458,43 +550,115 @@ export default function RoadbookEditor() {
           </div>
         </div>
 
-        {/* Course & Départ */}
+        {/* Course & Paramètres Physiologiques */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <h3 className={styles.sectionTitle}>⏱️ Course & Forme</h3>
-          
-          <div className={styles.paramGroup}>
-            <label className={styles.paramLabel}>Date & Heure de départ</label>
-            <input type="datetime-local" className="input-field" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ width: '100%' }} />
-          </div>
+          <h3 className={styles.sectionTitle}>⚙️ Course & Physiologie</h3>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
-              <label className={styles.paramLabel}>Fatigue Estimée (%)</label>
-              <input type="number" step="5" className="input-field" value={Number.isNaN(fatiguePercent) ? "" : fatiguePercent} onChange={e => setFatiguePercent(e.target.value === '' ? '' : parseFloat(e.target.value))} style={{ width: '100%' }} />
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
+              <label className={styles.paramLabel} title="Résistance à la fatigue sur la durée de l'épreuve">Résistance à la fatigue</label>
+              <select 
+                className="input-field" 
+                value={fatiguePercent}
+                onChange={e => setFatiguePercent(parseFloat(e.target.value))}
+                style={{ width: '100%' }}
+              >
+                {(() => {
+                  const base = Math.round(45 - ((Math.max(200, Math.min(1000, itraIndex || 600)) - 200) / 800) * 30);
+                  return (
+                    <>
+                      <option value={Math.max(5, base - 10)}>💪 Excellente (Mieux que mon ITRA)</option>
+                      <option value={base}>🏃 Normale (Conforme à mon ITRA)</option>
+                      <option value={base + 10}>🥵 Difficile (Moins bien préparé)</option>
+                      {![Math.max(5, base-10), base, base+10].includes(fatiguePercent) && (
+                        <option value={fatiguePercent}>Personnalisé ({fatiguePercent}%)</option>
+                      )}
+                    </>
+                  )
+                })()}
+              </select>
             </div>
             
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Météo Prévue</label>
               <select className="input-field" value={weather} onChange={e => setWeather(e.target.value)} style={{ width: '100%' }}>
-                <option value="froid">Froid (&lt; 10°C)</option>
-                <option value="modere">Modéré (10-20°C)</option>
-                <option value="chaud">Chaud (20-28°C)</option>
-                <option value="tres_chaud">Canicule (&gt; 28°C)</option>
+                <option value="froid">❄️ Froid (&lt; 10°C)</option>
+                <option value="modere">☁️ Modéré (10-20°C)</option>
+                <option value="chaud">☀️ Chaud (20-28°C)</option>
+                <option value="tres_chaud">🔥 Canicule (&gt; 28°C)</option>
               </select>
             </div>
           </div>
 
-          <div className={styles.paramGroup}>
-            <label className={styles.paramLabel} title="Seuil de pente à partir duquel vous marchez plutôt que de courir. Défaut: 15% (traileur moyen). Diminuez si vous êtes bon descendeur, augmentez si vous marchez plus.">Seuil Marche / Course (%)</label>
-            <input
-              type="number" step="1" min="5" max="30"
-              className="input-field"
-              value={Number.isNaN(descentThreshold) ? "" : descentThreshold}
-              onChange={e => setDescentThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
-              style={{ width: '100%' }}
-            />
-            <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px'}}>
-              Seuil pente descente douce/raide (modèle Minetti). Défaut: 15%
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
+              <label className={styles.paramLabel} title="Aisance dans les montées raides">Aisance en côte (Montée)</label>
+              <select 
+                className="input-field" 
+                value={walkThreshold}
+                onChange={e => setWalkThreshold(parseFloat(e.target.value))}
+                style={{ width: '100%' }}
+              >
+                {(() => {
+                  const base = Math.round(8 + ((Math.max(200, Math.min(1000, itraIndex || 600)) - 200) / 800) * 12);
+                  return (
+                    <>
+                      <option value={base + 4}>⛰️ Puissant (Court le plus possible)</option>
+                      <option value={base}>🏃 Standard (Adapté à mon ITRA)</option>
+                      <option value={Math.max(5, base - 4)}>🚶 Randonneur (Marche vite)</option>
+                      {![base+4, base, Math.max(5, base-4)].includes(walkThreshold) && (
+                        <option value={walkThreshold}>Personnalisé ({walkThreshold}%)</option>
+                      )}
+                    </>
+                  )
+                })()}
+              </select>
+            </div>
+
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
+              <label className={styles.paramLabel} title="Aisance technique en descente">Aisance en descente</label>
+              <select 
+                className="input-field" 
+                value={descentThreshold}
+                onChange={e => setDescentThreshold(parseFloat(e.target.value))}
+                style={{ width: '100%' }}
+              >
+                {(() => {
+                  const base = Math.round(10 + ((Math.max(200, Math.min(1000, itraIndex || 600)) - 200) / 800) * 15);
+                  return (
+                    <>
+                      <option value={base + 5}>🦅 Très à l'aise (Relance facile)</option>
+                      <option value={base}>🏃 Standard (Adapté à mon ITRA)</option>
+                      <option value={Math.max(5, base - 5)}>🛑 Prudent (Freine dans la pente)</option>
+                      {![base+5, base, Math.max(5, base-5)].includes(descentThreshold) && (
+                        <option value={descentThreshold}>Personnalisé ({descentThreshold}%)</option>
+                      )}
+                    </>
+                  )
+                })()}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
+              <label className={styles.paramLabel}>Stratégie d'effort</label>
+              <select className="input-field" value={pacingStrategy} onChange={e => setPacingStrategy(e.target.value)} style={{ width: '100%' }}>
+                <option value="prudent">🐢 Prudent (départ lent)</option>
+                <option value="regular">⏱️ Régulier (constant)</option>
+                <option value="aggressive">🚀 Agressif (départ rapide)</option>
+              </select>
+            </div>
+            
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
+              <label className={styles.paramLabel}>Technicité Défaut</label>
+              <select className="input-field" value={globalTechnicality} onChange={e => setGlobalTechnicality(e.target.value)} style={{ width: '100%' }}>
+                <option value="1">🛣️ 1 - Très Roulant</option>
+                <option value="2">🌲 2 - Trail Classique</option>
+                <option value="3">🪨 3 - Technique</option>
+                <option value="4">🧗 4 - Très Technique</option>
+                <option value="5">🏔️ 5 - Extrême</option>
+              </select>
             </div>
           </div>
         </div>
@@ -503,13 +667,13 @@ export default function RoadbookEditor() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <h3 className={styles.sectionTitle}>📏 Données Organisateur</h3>
           
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Distance Off. (km)</label>
               <input type="number" step="0.1" className="input-field" placeholder="Ex: 42.5" value={officialDistance} onChange={e => setOfficialDistance(e.target.value)} style={{ width: '100%' }} />
             </div>
 
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Dénivelé Pos. (m)</label>
               <input type="number" step="10" className="input-field" placeholder="Ex: 2500" value={officialElevation} onChange={e => setOfficialElevation(e.target.value)} style={{ width: '100%' }} />
             </div>
@@ -520,8 +684,8 @@ export default function RoadbookEditor() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <h3 className={styles.sectionTitle}>🍎 Objectifs Nutritionnels</h3>
           
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Glucides (g/h)</label>
               <input type="number" step="5" className="input-field" value={carbTarget} onChange={e => setCarbTarget(e.target.value)} style={{ width: '100%' }} />
               <div style={{fontSize: '0.7rem', color: '#10B981', marginTop: '4px'}}>
@@ -529,7 +693,7 @@ export default function RoadbookEditor() {
               </div>
             </div>
 
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Eau (ml/h)</label>
               <input type="number" step="50" className="input-field" value={waterTarget} onChange={e => setWaterTarget(e.target.value)} style={{ width: '100%' }} />
               <div style={{fontSize: '0.7rem', color: '#3B82F6', marginTop: '4px'}}>
@@ -538,8 +702,8 @@ export default function RoadbookEditor() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Sodium (mg/h)</label>
               <input type="number" step="50" className="input-field" value={sodiumTarget} onChange={e => setSodiumTarget(e.target.value)} style={{ width: '100%' }} />
               <div style={{fontSize: '0.7rem', color: '#F59E0B', marginTop: '4px'}}>
@@ -547,7 +711,7 @@ export default function RoadbookEditor() {
               </div>
             </div>
 
-            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '0' }}>
+            <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Caféine (ponctuel)</label>
               <input type="number" step="10" className="input-field" value={caffeineTarget} title="Dose cible par prise (en mg)" onChange={e => setCaffeineTarget(e.target.value)} style={{ width: '100%' }} />
               <div style={{fontSize: '0.7rem', color: '#8B5CF6', marginTop: '4px'}}>
@@ -556,71 +720,126 @@ export default function RoadbookEditor() {
             </div>
           </div>
         </div>
-        {/* Inventaire Nutritionnel */}
+        {/* Stratégie Nutritionnelle */}
+        {/* Stratégie Nutritionnelle */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '24px' }}>
-          <h3 className={styles.sectionTitle}>🎒 Inventaire Nutritionnel</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 className={styles.sectionTitle}>🎒 Stratégie Nutritionnelle</h3>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => setShowNutritionModal(true)}
+              style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+            >
+              Gérer mes produits
+            </button>
+          </div>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-            Définissez ici vos produits énergétiques pour les répartir sur les ravitaillements.
+            Sélectionnez les produits que vous prévoyez d'utiliser ou d'avoir à disposition.
           </p>
           
-          <div className={styles.invTable} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', fontWeight: 'bold', fontSize: '0.75rem', color: 'var(--text-secondary)', padding: '0 8px' }}>
-              <div>Nom du produit</div>
-              <div>Glucides (g)</div>
-              <div>Sodium (mg)</div>
-              <div>Caféine (mg)</div>
-              <div></div>
-            </div>
-            
-            {inventory.map(prod => (
-              <div key={prod.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'center' }}>
-                <input 
-                  type="text" 
-                  value={prod.name} 
-                  onChange={e => updateProduct(prod.id, 'name', e.target.value)}
-                  className="input-field" 
-                  style={{ width: '100%' }}
-                />
-                <input 
-                  type="number" 
-                  value={prod.carbs} 
-                  onChange={e => updateProduct(prod.id, 'carbs', parseFloat(e.target.value) || 0)}
-                  className="input-field" 
-                  style={{ width: '100%' }}
-                />
-                <input 
-                  type="number" 
-                  value={prod.sodium} 
-                  onChange={e => updateProduct(prod.id, 'sodium', parseFloat(e.target.value) || 0)}
-                  className="input-field" 
-                  style={{ width: '100%' }}
-                />
-                <input 
-                  type="number" 
-                  value={prod.caffeine} 
-                  onChange={e => updateProduct(prod.id, 'caffeine', parseFloat(e.target.value) || 0)}
-                  className="input-field" 
-                  style={{ width: '100%' }}
-                />
-                <button 
-                  onClick={() => removeProduct(prod.id)}
-                  style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  title="Supprimer"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            ))}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {inventory.length === 0 ? (
+              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Aucun produit sélectionné.</span>
+            ) : (
+              inventory.map(prod => (
+                <div key={prod.id || prod.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-surface-elevated)', padding: '6px 12px', borderRadius: 'var(--radius-full)', fontSize: '0.75rem', border: '1px solid var(--border-light)' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{prod.name}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {[
+                      prod.carbs ? `${prod.carbs}g Glu` : null,
+                      prod.sodium ? `${prod.sodium}mg Na` : null,
+                      prod.water ? `${prod.water}ml` : null,
+                      prod.caffeine ? `${prod.caffeine}mg Caf` : null
+                    ].filter(Boolean).join(' • ')}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
-          
-          <button 
-            onClick={addProduct} 
-            className="btn btn-secondary" 
-            style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.875rem' }}
-          >
-            <span>➕</span> Ajouter un produit
-          </button>
         </div>
+
+        {/* Modal Nutrition */}
+        {showNutritionModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setShowNutritionModal(false)}>
+            <div style={{ background: 'var(--bg-surface)', padding: '24px', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: 'var(--shadow-xl)', border: '1px solid var(--border-light)' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '16px' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Sélection des produits</h2>
+                <button onClick={() => setShowNutritionModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px' }}>&times;</button>
+              </div>
+              
+              <div style={{ overflowY: 'auto', flex: 1, paddingRight: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                  {(() => {
+                    const allProductsMap = new Map();
+                    DEFAULT_NUTRITION_PRODUCTS.forEach(p => allProductsMap.set(p.name, p));
+                    dbProducts.forEach(p => allProductsMap.set(p.name, p));
+                    inventory.forEach(p => {
+                      if (!allProductsMap.has(p.name)) {
+                        allProductsMap.set(p.name, { ...p, isLegacy: true });
+                      }
+                    });
+                    return Array.from(allProductsMap.values());
+                  })().map(p => {
+                    const isSelected = inventory.some(item => item.name === p.name || item.id === p.id);
+                    return (
+                      <label 
+                        key={p.id || p.name} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '12px', 
+                          padding: '12px', 
+                          background: isSelected ? 'var(--bg-surface-elevated)' : 'var(--bg-surface)', 
+                          border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--border-subtle)'}`, 
+                          borderRadius: 'var(--radius-md)', 
+                          cursor: 'pointer', 
+                          transition: 'all 0.2s' 
+                        }}
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setInventory([...inventory, {
+                                id: p.id || `custom-${Date.now()}`,
+                                name: p.name,
+                                carbs: p.carbs || 0,
+                                sodium: p.sodium || 0,
+                                caffeine: p.caffeine || 0,
+                                water: p.water || 0
+                              }]);
+                            } else {
+                              setInventory(inventory.filter(item => item.name !== p.name && item.id !== p.id));
+                            }
+                          }}
+                          style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: 'var(--color-primary)', flexShrink: 0 }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                          <span style={{ fontSize: '0.9rem', fontWeight: '600', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {p.brand ? `${p.brand} ${p.name}` : p.name}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {[
+                              p.carbs ? `${p.carbs}g Glu` : null,
+                              p.sodium ? `${p.sodium}mg Na` : null,
+                              p.water ? `${p.water}ml` : null,
+                              p.caffeine ? `${p.caffeine}mg Caf` : null
+                            ].filter(Boolean).join(' • ')}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid var(--border-light)' }}>
+                <button className="btn btn-primary" onClick={() => setShowNutritionModal(false)}>Terminer</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={styles.layout}>
@@ -739,10 +958,14 @@ export default function RoadbookEditor() {
                         plannedSodium += (prod.sodium || 0) * qty;
                         plannedCaffeine += (prod.caffeine || 0) * qty;
                         
-                        // Si le nom du produit contient "ml", on essaie d'extraire la quantité d'eau pour la jauge.
-                        const mlMatch = prod.name.match(/(\d+)\s*ml/i);
-                        if (mlMatch) {
-                          plannedWater += parseInt(mlMatch[1]) * qty;
+                        if (prod.water !== undefined) {
+                          plannedWater += (prod.water || 0) * qty;
+                        } else {
+                          // Rétrocompatibilité : si le nom contient "ml"
+                          const mlMatch = prod.name.match(/(\d+)\s*ml/i);
+                          if (mlMatch) {
+                            plannedWater += parseInt(mlMatch[1]) * qty;
+                          }
                         }
                      }
                   });

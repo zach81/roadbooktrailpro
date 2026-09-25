@@ -203,9 +203,9 @@ export default function AdminPage() {
       const optThreshold = 5;
       
       const newSegments = generateSegments(
-        points, enrichedWp, 28, 35, 15,
+        points, enrichedWp, 600, 15,
         "", optThreshold, 1,
-        "modere", 15
+        "modere", 15, 12
       );
       setSegments(newSegments);
     }

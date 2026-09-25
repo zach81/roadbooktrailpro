@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { cacheDirectory, writeAsStringAsync, EncodingType } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 export async function generateAndShareGPX(roadbook: any) {
@@ -38,8 +38,8 @@ export async function generateAndShareGPX(roadbook: any) {
 
     const gpxContent = header + '\n' + wpts + trkHeader + '\n' + trkpts + trkFooter;
 
-    const fileUri = FileSystem.cacheDirectory + 'roadbook_export.gpx';
-    await FileSystem.writeAsStringAsync(fileUri, gpxContent, { encoding: FileSystem.EncodingType.UTF8 });
+    const fileUri = cacheDirectory + 'roadbook_export.gpx';
+    await writeAsStringAsync(fileUri, gpxContent, { encoding: EncodingType.UTF8 });
     
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(fileUri, { UTI: 'public.xml', mimeType: 'application/gpx+xml' });

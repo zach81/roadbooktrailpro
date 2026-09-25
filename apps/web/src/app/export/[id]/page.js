@@ -114,14 +114,19 @@ export default function RoadbookSummary() {
             const newSegments = generateSegments(
               pts, 
               enrichedWp, 
-              data.targetFast || 28, 
-              data.targetSlow || 35, 
+              data.itraIndex || 600,
               data.fatiguePercent || 15, 
               data.startTime || "", 
               optThreshold, 
               distFactor,
               data.weather || 'modere',
-              data.descentThreshold || 15
+              data.descentThreshold || 15,
+              data.walkThreshold || 12,
+              data.targetTime ? parseFloat(data.targetTime) : null,
+              data.upCostDivider || 80,
+              data.downCostModifier || 1.0,
+              data.globalTechnicality || 2,
+              data.pacingStrategy || 'regular'
             );
             
             setSegments(newSegments);
@@ -137,7 +142,7 @@ export default function RoadbookSummary() {
     }
 
     fetchData();
-  }, [id, currentUser, router]);
+  }, [id, currentUser, isAdmin, router]);
 
   const updateConfig = async (key, value) => {
     const newConfig = { ...displayConfig, [key]: value };
@@ -235,7 +240,7 @@ export default function RoadbookSummary() {
         </div>
       </div>
 
-      <div className={styles.printSettings} style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '24px' }} className="no-print">
+      <div className={`${styles.printSettings} no-print`} style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '24px' }}>
         <strong>Options d'impression :</strong>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
           <input type="checkbox" checked={printConfig.table} onChange={e => setPrintConfig({...printConfig, table: e.target.checked})} />

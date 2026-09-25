@@ -144,5 +144,29 @@ export const nutritionDatabase = [
     sodium: 303,
     weight: 27,
     description: "Boisson complète remplaçant solides et pilules de sel."
+  },
+  {
+    id: "eau_pure_500",
+    brand: "Générique",
+    name: "Eau Pure 500ml",
+    type: "Drink",
+    carbs: 0,
+    calories: 0,
+    sodium: 0,
+    water: 500,
+    weight: 500,
+    description: "Eau minérale classique."
+  },
+  {
+    id: "eau_gazeuse_500",
+    brand: "Générique",
+    name: "Eau Gazeuse 500ml (ex: St-Yorre)",
+    type: "Drink",
+    carbs: 0,
+    calories: 0,
+    sodium: 850,
+    water: 500,
+    weight: 500,
+    description: "Eau gazeuse riche en minéraux (sodium)."
   }
 ];

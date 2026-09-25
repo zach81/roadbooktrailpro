@@ -113,7 +113,7 @@ export function enrichWaypointsWithStartEnd(waypoints, points) {
  * Calcule les statistiques globales d'une trace (Distance, D+, D-)
  * avec un lissage pour éviter l'exagération du bruit GPS.
  */
-export function calculateTraceStats(points, elevationThreshold = 7, distanceFactor = 1) {
+export function calculateTraceStats(points, elevationThreshold = 5, distanceFactor = 1) {
   if (!points || points.length === 0) return { distance: 0, elevation: { pos: 0, neg: 0 } };
 
   let distance = 0;
@@ -197,21 +197,20 @@ export function calculateKmEffort(
   elePos,
   eleNeg,
   descentThresholdPercent = 15,
-  avgDescentSlopePct = 0
+  avgDescentSlopePct = 0,
+  upCostDivider = 80,
+  downCostModifier = 1.0
 ) {
-  // --- Coût montée : ajusté pour être plus pénalisant (+25% par rapport au standard ITRA) ---
-  const upCost = elePos / 80;
+  // --- Coût montée : paramétrable selon le niveau du coureur ---
+  const upCost = elePos / upCostDivider;
 
   // --- Coût descente : transition douce via sigmoïde ---
-  // softCoeff ∈ [1/215, 1/115] selon la pente (-30% de coût par rapport au modèle précédent)
-  // k=0.8 donne une transition sur ~6% de pente (réaliste)
   const k = 0.8;
   const slope = avgDescentSlopePct || 0;
   const sigmoid = 1 / (1 + Math.exp(-k * (slope - descentThresholdPercent)));
-  // sigmoid ≈ 0 → descente douce → coeff ≈ 1/215
-  // sigmoid ≈ 1 → descente raide → coeff ≈ 1/115
+  
   const downCoeff = (1 / 215) + sigmoid * ((1 / 115) - (1 / 215));
-  const downCost = eleNeg * downCoeff;
+  const downCost = eleNeg * downCoeff * downCostModifier;
 
   return distance + upCost + downCost;
 }
@@ -229,6 +228,19 @@ export function calculateKmEffort(
  * @returns {number} coefficient multiplicateur (1.0 = pas de malus)
  */
 export function getWeatherCoefficient(weather) {
+  if (typeof weather === 'number') {
+    // Interpolation continue si on reçoit une température en °C
+    // < 5°C : 0.97
+    // 15°C : 1.00 (optimal)
+    // 25°C : 0.95
+    // 35°C : 0.88
+    if (weather <= 5) return 0.97;
+    if (weather <= 15) return 0.97 + (weather - 5) * (0.03 / 10);
+    if (weather <= 25) return 1.00 - (weather - 15) * (0.05 / 10);
+    if (weather <= 35) return 0.95 - (weather - 25) * (0.07 / 10);
+    return 0.88;
+  }
+
   const coefficients = {
     froid:     0.97,  // -3% : contractures, équipement lourd
     modere:    1.00,  // référence
@@ -249,6 +261,24 @@ export function getWeatherCoefficient(weather) {
 export function getNightCoefficient(nightIntensity) {
   return 1 - 0.10 * nightIntensity;
 }
+
+/**
+ * Retourne un coefficient de vitesse selon la technicité du terrain.
+ *
+ * @param {number} technicality - 1 (Très Roulant) à 5 (Extrême)
+ * @returns {number} coefficient multiplicateur du temps
+ */
+export function getTerrainFactor(technicality) {
+  switch(Number(technicality)) {
+    case 1: return 0.95; // Très roulant (ex: piste cyclable, route)
+    case 2: return 1.00; // Trail classique (défaut)
+    case 3: return 1.10; // Technique (racines, rochers)
+    case 4: return 1.25; // Très technique (haute montagne, pierriers)
+    case 5: return 1.40; // Extrême (hors piste, rando alpine)
+    default: return 1.00;
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────
 // 5. MODÈLE DE FATIGUE EXPONENTIELLE
@@ -290,26 +320,6 @@ export function computeFatigueIntegral(x0, dx, E, fatiguePercent) {
   return factor;
 }
 
-/**
- * Calcule la constante de base pour normaliser le temps total sur l'effort.
- * Garantit que la somme des segments correspond exactement à targetMs.
- *
- * @param {number} targetMs - Temps cible en ms (après déduction des pauses)
- * @param {Array} segments - Segments avec kmEffort et modifier
- * @param {number} fatiguePercent - Fatigue en %
- * @param {number} E - Effort total
- * @returns {number} p0 - ms par unité d'effort de base
- */
-function computeP0(targetMs, segmentsWithDx, fatiguePercent, E) {
-  // Somme de toutes les intégrales de fatigue
-  let totalIntegral = 0;
-  let currentX = 0;
-  for (const { dx } of segmentsWithDx) {
-    totalIntegral += computeFatigueIntegral(currentX, dx, E, fatiguePercent);
-    currentX += dx;
-  }
-  return totalIntegral > 0 ? targetMs / totalIntegral : 1;
-}
 
 // ─────────────────────────────────────────────────────────────
 // 6. GÉNÉRATEUR DE SEGMENTS
@@ -317,11 +327,11 @@ function computeP0(targetMs, segmentsWithDx, fatiguePercent, E) {
 
 /**
  * Génère les segments du roadbook avec tous les calculs scientifiques.
+ * Le temps de base est une conséquence de la physiologie (Index UTMB).
  *
  * @param {Array}   points               - Points GPS de la trace
  * @param {Array}   orderedWaypoints     - Waypoints triés
- * @param {number}  targetFastHours      - Objectif temps rapide (h)
- * @param {number}  targetSlowHours      - Objectif temps lent (h)
+ * @param {number}  itraIndex            - Index UTMB/ITRA du coureur
  * @param {number}  fatiguePercent       - Fatigue estimée (%)
  * @param {string}  startTimeStr         - ISO datetime de départ
  * @param {number}  elevationThreshold   - Seuil lissage altimétrique (m)
@@ -333,14 +343,19 @@ function computeP0(targetMs, segmentsWithDx, fatiguePercent, E) {
 export function generateSegments(
   points,
   orderedWaypoints,
-  targetFastHours,
-  targetSlowHours,
+  itraIndex,
   fatiguePercent,
   startTimeStr = null,
   elevationThreshold = 5,
   distanceFactor = 1,
   weather = 'modere',
-  descentThreshold = 15
+  descentThreshold = 15,
+  walkThreshold = 12,
+  targetTimeH = null,
+  upCostDivider = 80,
+  downCostModifier = 1.0,
+  globalTechnicality = 2,
+  pacingStrategy = 'regular'
 ) {
   if (!points || points.length === 0 || orderedWaypoints.length < 2) return [];
 
@@ -392,7 +407,6 @@ export function generateSegments(
       }
     }
 
-    // Pente moyenne de descente sur ce segment (pour le modèle Minetti)
     const avgDescentSlopePct = (descendDist > 0 && descendEleNeg > 0)
       ? (descendEleNeg / (descendDist * 1000)) * 100
       : 0;
@@ -402,7 +416,9 @@ export function generateSegments(
       segmentElePos,
       segmentEleNeg,
       descentThreshold,
-      avgDescentSlopePct
+      avgDescentSlopePct,
+      upCostDivider,
+      downCostModifier
     );
 
     cumulDistance += segmentDist;
@@ -424,89 +440,136 @@ export function generateSegments(
       cumulElevation,
       kmEffort,
       avgDescentSlopePct,
-      climbKmEffort: calculateKmEffort(climbDist, climbElePos, 0, descentThreshold, 0),
+      climbKmEffort: calculateKmEffort(climbDist, climbElePos, 0, descentThreshold, 0, upCostDivider, downCostModifier),
       climbElePos,
       climbDist,
       points: segmentPoints
     });
   }
 
-  // ── PHASE 2 : Normalisation temps avec fatigue exponentielle ─
-
-  // Pauses totales (en ms)
-  let totalPauseMs = rawSegments.reduce((acc, seg) => acc + (seg.to.pause || 0) * 60000, 0);
-
-  const targetFastMs  = Math.max(1, ((targetFastHours  || 0) * 3600000) - totalPauseMs);
-  const targetSlowMs  = Math.max(1, ((targetSlowHours || 0) * 3600000) - totalPauseMs);
-
+  // ── PHASE 2 : Application des allures physiologiques ────────
   const startTime = startTimeStr
     ? new Date(startTimeStr).getTime()
     : new Date().setHours(8, 0, 0, 0);
 
   const F = (fatiguePercent || 0);
+  const { flatSpeedKmh } = estimateBasePaces(itraIndex);
 
-  // Calcul de l'effort total effectif (avec modifier par waypoint)
-  const segmentsWithDx = rawSegments.map(seg => ({
-    dx: seg.kmEffort * ((seg.to.time_modifier || 100) / 100.0),
-    seg
-  }));
-  const E = segmentsWithDx.reduce((acc, { dx }) => acc + dx, Math.max(segmentsWithDx.reduce((a, { dx }) => a + dx, 0) * 0.0001, 0.001));
+  // Effort total pour calculer le facteur de fatigue exponentiel
+  const E = rawSegments.reduce((acc, seg) => acc + seg.kmEffort, 0.001);
+  let currentX = 0;
 
+  // Calcul du temps de base (sans fatigue) pour chaque segment, et avec fatigue
+  const segmentsBase = rawSegments.map(seg => {
+    // Le temps de base découle de l'Index ITRA, qui a été calibré sur la formule STANDARD ITRA
+    const standardKmEffort = seg.distance + (seg.elevationPos / 100);
+    
+    // Application de la technicité sur le segment
+    const technicalityLevel = seg.to.technicality || globalTechnicality || 2;
+    const terrainFactor = getTerrainFactor(technicalityLevel);
+    
+    const freshHours = standardKmEffort / flatSpeedKmh;
+    // On applique le terrainFactor ici ! Plus c'est technique, plus le freshMs augmente.
+    const freshMs = freshHours * 3600000 * terrainFactor;
+    
+    // Fatigue intégrale sur ce segment
+    const baseFatigueFactor = seg.kmEffort > 0 ? (computeFatigueIntegral(currentX, seg.kmEffort, E, F) / seg.kmEffort) : 1;
+    
+    // Application de la stratégie de pacing
+    const progress = E > 0 ? (currentX + (seg.kmEffort / 2)) / E : 0;
+    let pacingMultiplier = 1.0;
+    if (pacingStrategy === 'prudent') {
+      // Prudent : départ plus lent (1.05), fin plus rapide (0.95) par rapport à la courbe normale
+      pacingMultiplier = 1.05 - 0.10 * progress;
+    } else if (pacingStrategy === 'aggressive') {
+      // Agressif : départ plus rapide (0.95), fin beaucoup plus lente (1.10)
+      pacingMultiplier = 0.95 + 0.15 * progress;
+    }
+    
+    const fatigueFactor = baseFatigueFactor * pacingMultiplier;
+    currentX += seg.kmEffort;
+
+    return {
+      ...seg,
+      standardKmEffort,
+      freshMs,
+      fatiguedMs: freshMs * fatigueFactor
+    };
+  });
+
+  // ── PHASE 3 & 4 : Ajustement global et Calcul final (météo, nuit, pauses) ────
+  // Passe 1 : Estimation des temps finaux SANS ajustement global
   const baseLat = points[0]?.lat || 45.9;
   const baseLon = points[0]?.lon || 6.8;
 
-  // PASS 1 : Calcul des facteurs de fatigue purs et estimation temporelle pour la nuit
-  let pass1X = 0;
-  const pass1Weights = segmentsWithDx.map(({ dx }) => {
-    const w = computeFatigueIntegral(pass1X, dx, E, F);
-    pass1X += dx;
-    return w;
-  });
-  const sumW1 = pass1Weights.reduce((a, b) => a + b, 0);
+  let cumulMsPass1 = startTime;
+  let totalOverrideMs = 0;
+  let totalPredictedOverrideMs = 0;
+  let totalPredictedMs = 0;
 
-  let tempCumulSlowMs = startTime;
-  const pass1Data = segmentsWithDx.map(({ dx, seg }, i) => {
-    const w1 = pass1Weights[i];
-    const estimatedSlowMs = targetSlowMs * (sumW1 > 0 ? (w1 / sumW1) : 0);
-    const midSlowMs = tempCumulSlowMs + estimatedSlowMs / 2;
-    const nightIntens = getNightIntensity(new Date(midSlowMs), baseLat, baseLon);
+  for (const seg of segmentsBase) {
+    const nightIntens = getNightIntensity(new Date(cumulMsPass1 + (seg.fatiguedMs / 2)), baseLat, baseLon);
     const nightCoeff = getNightCoefficient(nightIntens);
-    tempCumulSlowMs += estimatedSlowMs + (seg.to.pause || 0) * 60000;
-    
-    // Le poids final prend en compte la nuit. (weatherCoeff s'annule car constant global)
-    return {
-      finalWeight: w1 / nightCoeff,
-      nightIntens
-    };
-  });
-  
-  const sumFinalWeights = pass1Data.reduce((a, b) => a + b.finalWeight, 0);
-
-  // ── PHASE 3 : Calcul segment par segment ─────────────────────
-  let currentX = 0;
-  let cumulFastMs = startTime;
-  let cumulSlowMs = startTime;
-
-  return segmentsWithDx.map(({ dx, seg }, i) => {
     const modifier = (seg.to.time_modifier || 100) / 100.0;
     
-    const pData = pass1Data[i];
-    const segmentFastMs = sumFinalWeights > 0 ? targetFastMs * (pData.finalWeight / sumFinalWeights) : 0;
-    const segmentSlowMs = sumFinalWeights > 0 ? targetSlowMs * (pData.finalWeight / sumFinalWeights) : 0;
-    const nightIntens = pData.nightIntens;
+    // Temps final estimé sans ratio global
+    const segFinalMs = (seg.fatiguedMs / modifier) / (weatherCoeff * nightCoeff);
+    totalPredictedMs += segFinalMs;
+    
+    if (seg.to.knownTimeMs) {
+      totalOverrideMs += seg.to.knownTimeMs;
+      totalPredictedOverrideMs += segFinalMs;
+    }
+    
+    cumulMsPass1 += segFinalMs + ((seg.to.pause || 0) * 60000);
+  }
 
-    cumulFastMs += segmentFastMs;
-    cumulSlowMs += segmentSlowMs;
+  let fastRatio = totalPredictedOverrideMs > 0 ? (totalOverrideMs / totalPredictedOverrideMs) : 1.0;
+  let slowRatio = totalPredictedOverrideMs > 0 ? (totalOverrideMs / totalPredictedOverrideMs) : 1.0;
 
-    const arrFast = new Date(cumulFastMs).toISOString();
-    const arrSlow = new Date(cumulSlowMs).toISOString();
+  if (targetTimeH) {
+    const targetFastMs = targetTimeH * 3600000;
+    const remainingTargetFastMs = targetFastMs - totalOverrideMs;
+    fastRatio = (totalPredictedMs - totalPredictedOverrideMs > 0)
+      ? Math.max(0, remainingTargetFastMs / (totalPredictedMs - totalPredictedOverrideMs))
+      : 1.0;
+  }
+  
+  slowRatio = fastRatio * 1.20;
+
+  // Passe 2 : Calcul final avec application de l'ajustement global
+  let cumulMsFast = startTime;
+  let cumulMsSlow = startTime;
+
+  return segmentsBase.map((seg, i) => {
+    // Recalcul précis de la nuit avec le nouveau temps décalé pour Rapide
+    const nightIntensFast = getNightIntensity(new Date(cumulMsFast + (seg.fatiguedMs / 2)), baseLat, baseLon);
+    const nightCoeffFast = getNightCoefficient(nightIntensFast);
+    
+    // Et pour Lent
+    const nightIntensSlow = getNightIntensity(new Date(cumulMsSlow + (seg.fatiguedMs / 2)), baseLat, baseLon);
+    const nightCoeffSlow = getNightCoefficient(nightIntensSlow);
+    
+    // Modifier manuel (Vitesse en %) : 110% -> 1.1 -> on divise le temps par 1.1 (plus rapide)
+    const modifier = (seg.to.time_modifier || 100) / 100.0;
+    
+    const segmentFinalMsFast = (seg.fatiguedMs * fastRatio / modifier) / (weatherCoeff * nightCoeffFast);
+    const segmentFinalMsSlow = (seg.fatiguedMs * slowRatio / modifier) / (weatherCoeff * nightCoeffSlow);
+    
+    cumulMsFast += segmentFinalMsFast;
+    cumulMsSlow += segmentFinalMsSlow;
+    
+    const arrTimeFast = new Date(cumulMsFast).toISOString();
+    const arrTimeSlow = new Date(cumulMsSlow).toISOString();
 
     const pauseMs = (seg.to.pause || 0) * 60000;
-    cumulFastMs += pauseMs;
-    cumulSlowMs += pauseMs;
+    cumulMsFast += pauseMs;
+    cumulMsSlow += pauseMs;
 
-    // ── Analyse terrain (pour jauge marche/course) ──────────────
-    const walkThreshold = computeWalkThreshold(currentX, E, F);
+    // ── Analyse terrain ──────────────
+    // currentX est redéfini localement pour computeWalkThreshold
+    const localX = segmentsBase.slice(0, i).reduce((a, b) => a + b.kmEffort, 0);
+    const walkThresholdPercent = computeWalkThreshold(localX, E, F, walkThreshold);
 
     let walkDist = 0, runUphillDist = 0, avgWalkSlopeCumul = 0;
     let tempRefEle = points[seg.from.pointIndex]?.ele || 0;
@@ -523,7 +586,7 @@ export function generateSegments(
         if (diff >= elevationThreshold) {
           const dSinceRef = tempSegDist - tempRefDist;
           const slope = dSinceRef > 0 ? (diff / (dSinceRef * 1000)) : 0;
-          if (slope >= walkThreshold) {
+          if (slope >= walkThresholdPercent) {
             walkDist += dSinceRef;
             avgWalkSlopeCumul += slope * dSinceRef;
           } else {
@@ -541,39 +604,37 @@ export function generateSegments(
     const downFlatDist = Math.max(0, seg.distance - walkDist - runUphillDist);
     const walkAvgSlope = walkDist > 0 ? (avgWalkSlopeCumul / walkDist) * 100 : 0;
 
-    // ── VAM estimée (Vitesse Ascensionnelle Maximale) ────────────
-    const timeOnClimbsHours = ((segmentSlowMs / 3600000) * (seg.climbKmEffort / (seg.kmEffort || 1))) || 0;
+    // ── VAM estimée (Vitesse Ascensionnelle Maximale effective) ────────────
+    const timeOnClimbsHours = ((segmentFinalMsFast / 3600000) * (seg.climbKmEffort / (seg.kmEffort || 1))) || 0;
     const vamEstimate = (timeOnClimbsHours > 0 && seg.climbElePos > 0)
       ? Math.round(seg.climbElePos / timeOnClimbsHours)
       : 0;
 
     // ── Allure moyenne sur le segment (min/km) ───────────────────
     const paceSlowMinPerKm = seg.distance > 0
-      ? (segmentSlowMs / 60000) / seg.distance
+      ? (segmentFinalMsSlow / 60000) / seg.distance
       : 0;
-
-    currentX += dx;
 
     return {
       ...seg,
-      durationFastMs: segmentFastMs,
-      durationSlowMs: segmentSlowMs,
-      arr_fast: arrFast,
-      arr_slow: arrSlow,
-      nightIntensity: nightIntens,
+      // Indépendant pour lent et rapide
+      durationFastMs: segmentFinalMsFast,
+      durationSlowMs: segmentFinalMsSlow,
+      arr_fast: arrTimeFast,
+      arr_slow: arrTimeSlow,
+      nightIntensity: nightIntensFast,
       weatherCoeff,
       terrain: {
         downFlatDist,
         runUphillDist,
         walkDist,
         walkAvgSlope,
-        walkThresholdPercent: walkThreshold * 100
+        walkThresholdPercent: walkThresholdPercent * 100
       },
       vamEstimate,
       paceSlowMinPerKm,
-      // Fallbacks
-      durationMs: segmentSlowMs,
-      arrivalTime: arrSlow
+      durationMs: segmentFinalMsFast,
+      arrivalTime: arrTimeFast
     };
   });
 }
@@ -584,11 +645,11 @@ export function generateSegments(
  * Modèle empirique : le seuil baisse avec la fatigue (on marche plus tôt),
  * puis remonte légèrement sur les 10 derniers % (effet "end-spurt").
  */
-function computeWalkThreshold(x, E, fatiguePercent) {
+function computeWalkThreshold(x, E, fatiguePercent, baseThresholdPercent = 12) {
   const F = fatiguePercent / 100;
   const effortProgress = E > 0 ? x / E : 0;
 
-  let threshold = 0.12; // 12% de base
+  let threshold = baseThresholdPercent / 100.0;
   const fatigueDrop = (F / 0.15) * 0.05;
   threshold -= effortProgress * fatigueDrop;
 
@@ -602,38 +663,59 @@ function computeWalkThreshold(x, E, fatiguePercent) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// La fonction estimateTimeFromVMA a été supprimée selon les spécifications.
+export function estimateBasePaces(utmbIndex) {
+  const index = Math.max(200, Math.min(1000, utmbIndex || 600));
+  
+  // Modèle officiel ITRA : la vitesse est directement proportionnelle à la cote ITRA.
+  // Un coureur ITRA 1000 a une vitesse équivalente plat d'environ 21.0 km/h (record du monde marathon ~2h00)
+  const flatSpeedKmh = (index / 1000) * 21.0;
+  const flatPaceMinKm = 60 / flatSpeedKmh;
+  const vam = flatSpeedKmh * 100; // Approximation VAM = Vitesse Plat * 100
+
+  return { vam, flatPaceMinKm, flatSpeedKmh };
+}
 
 /**
- * Estime un temps cible à partir de l'index ITRA du coureur en utilisant le modèle de Riegel étendu.
- * @param {number} itraIndex - Index ITRA (ex: 600)
- * @param {number} kmEffort - Kilomètres-effort
- * @param {number} fatiguePercent - Fatigue estimée (%)
- * @returns {{ fastH: number, slowH: number }}
+ * Calcule les paramètres de course optimaux en fonction de l'index ITRA.
+ * Permet d'adapter l'agilité en descente, l'efficacité en montée et la résistance à la fatigue.
  */
-export function estimateTimeFromITRA(itraIndex, kmEffort, fatiguePercent = 15) {
-  if (!itraIndex || itraIndex <= 0 || !kmEffort || kmEffort <= 0) return null;
-
-  // Modèle empirique affiné (Riegel) calibré sur une distance de 71 ke (ex: Madeloc 45km/2600m+)
-  const baseSpeed = 2.5 + (itraIndex / 1000) * 16.5; 
+export function deriveConfigFromITRA(itraIndex) {
+  const index = Math.max(200, Math.min(1000, itraIndex || 600));
   
-  // Exposant de fatigue de Riegel (1.0 = aucune perte de vitesse avec la distance)
-  // Plus l'ITRA est faible, plus la vitesse s'effondre sur les très longues distances.
-  const timeExponent = 1.05 + ((1000 - itraIndex) / 1000) * 0.65;
+  // Fatigue par défaut (à ajuster par l'utilisateur selon la distance)
+  // Elite (1000) -> 15%, Beginner (200) -> 45%
+  const fatiguePercent = Math.round(45 - ((index - 200) / 800) * 30);
   
-  // Temps de base pour un effort de 71 ke
-  const baseTime71 = 71 / baseSpeed;
+  // Pente Descente Technique: Elite -> 25%, Beginner -> 10%
+  const descentThreshold = Math.round(10 + ((index - 200) / 800) * 15);
   
-  // Temps ajusté à la distance (Riegel formula: T2 = T1 * (D2/D1)^exponent)
-  const baseH = baseTime71 * Math.pow(kmEffort / 71, timeExponent);
+  // Pente Marche Montée: Elite -> 20%, Beginner -> 8%
+  const walkThreshold = Math.round(8 + ((index - 200) / 800) * 12);
 
-  // Ajout de la fatigue ponctuelle de la course
-  const fatigueFactor = 1 + (fatiguePercent / 200);
-  const fastH = Math.round(baseH * fatigueFactor * 10) / 10;
-  const slowH = Math.round(baseH * fatigueFactor * 1.20 * 10) / 10;
+  // Up Cost Divider: Elite -> 100, Beginner -> 80
+  const upCostDivider = Math.round(80 + ((index - 200) / 800) * 20);
 
-  return { fastH, slowH };
+  // Down Cost Modifier: Elite -> 0.2 (très agile), Beginner -> 1.5 (très coûteux)
+  // On utilise toFixed pour éviter les problèmes d'arrondi
+  const downCostModifier = parseFloat((1.5 - ((index - 200) / 800) * 1.3).toFixed(2));
+
+  const pacingStrategy = 'regular';
+
+  return {
+    fatiguePercent,
+    descentThreshold,
+    walkThreshold,
+    upCostDivider,
+    downCostModifier,
+    pacingStrategy
+  };
 }
+
+// ─────────────────────────────────────────────────────────────
+// La fonction estimateTimeFromVMA a été supprimée selon les spécifications.
+
+// L'estimation globale basée sur l'ITRA a été retirée à la demande de l'utilisateur.
+// L'objectif global (targetTime) est désormais la seule source de vérité pour le roadbook.
 
 // ─────────────────────────────────────────────────────────────
 // 8. UTILITAIRES GRAPHIQUES & CARTOGRAPHIQUES
@@ -736,99 +818,11 @@ export function getNightIntensity(dateObj, lat, lon) {
     const maxDist = (nextSunrise - prevSunset) / 2;
     const distToNadir = Math.abs(time - nadirTime);
 
-    return Math.max(0, 1 - (distToNadir / maxDist));
+    // Saturation : la pleine nuit (1.0) est atteinte rapidement et maintenue
+    return Math.min(1.0, Math.max(0, 1 - (distToNadir / maxDist)) * 2.0);
   }
 
   return 0;
 }
 
-// ─────────────────────────────────────────────────────────────
-// 10. DONNÉES DE TEST / VALIDATION
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Exemples de référence pour valider le moteur de calcul.
- * Sources : résultats officiels UTMB, ITRA, Runners World.
- *
- * Usage : compareModelToReference(VALIDATION_EXAMPLES[0]) dans la console
- */
-export const VALIDATION_EXAMPLES = [
-  {
-    name: "UTMB — Coureur Niveau 700 ITRA",
-    // Données course
-    distanceKm: 173,
-    elePos: 10000,
-    eleNeg: 10000,
-    // Données coureur
-    itraIndex: 700,
-    fatiguePercent: 20,
-    weather: 'modere',
-    // Résultat réel moyen
-    referenceTimeH: 26.5,
-    // Source : finishers UTMB 2019, médiane des classés 700-750 ITRA
-  },
-  {
-    name: "CCC (Courmayeur-Champex-Chamonix) — Coureur 600 ITRA",
-    distanceKm: 100,
-    elePos: 6100,
-    eleNeg: 5600,
-    itraIndex: 600,
-    fatiguePercent: 18,
-    weather: 'modere',
-    referenceTimeH: 17.5,
-  },
-  {
-    name: "Marathon des Sables étape type — Coureur moyen",
-    distanceKm: 40,
-    elePos: 300,
-    eleNeg: 300,
-    itraIndex: 400,
-    fatiguePercent: 10,
-    weather: 'tres_chaud',
-    referenceTimeH: 6.5,
-  },
-  {
-    name: "Trail 20km local — Débutant",
-    distanceKm: 20,
-    elePos: 800,
-    eleNeg: 800,
-    itraIndex: 200,
-    fatiguePercent: 8,
-    weather: 'modere',
-    referenceTimeH: 3.5,
-  }
-];
-
-/**
- * Compare le modèle aux données de référence (pour tests en console).
- * @param {Object} example - Un élément de VALIDATION_EXAMPLES
- */
-export function compareModelToReference(example) {
-  const totalKmEffort = calculateKmEffort(
-    example.distanceKm,
-    example.elePos,
-    example.eleNeg,
-    15,
-    example.eleNeg / (example.distanceKm * 10) // pente descente approx.
-  );
-
-  const estimate = estimateTimeFromITRA(
-    example.itraIndex,
-    totalKmEffort,
-    example.fatiguePercent
-  );
-
-  const weatherCoeff = getWeatherCoefficient(example.weather);
-  const adjustedFast = estimate ? estimate.fastH / weatherCoeff : null;
-  const adjustedSlow = estimate ? estimate.slowH / weatherCoeff : null;
-
-  console.group(`🏔️ ${example.name}`);
-  console.log(`km-effort : ${totalKmEffort.toFixed(1)} ke`);
-  console.log(`Estimation (météo incluse) : ${adjustedFast?.toFixed(1)}h → ${adjustedSlow?.toFixed(1)}h`);
-  console.log(`Référence réelle : ${example.referenceTimeH}h`);
-  const errorPct = adjustedFast ? Math.abs(adjustedFast - example.referenceTimeH) / example.referenceTimeH * 100 : null;
-  console.log(`Écart modèle : ${errorPct?.toFixed(1)}%`);
-  console.groupEnd();
-
-  return { totalKmEffort, adjustedFast, adjustedSlow, referenceTimeH: example.referenceTimeH };
-}
+// La section de validation avec estimateTimeFromITRA a été retirée.

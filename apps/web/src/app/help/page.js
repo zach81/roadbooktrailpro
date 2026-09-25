@@ -104,13 +104,21 @@ où α = ln(1 + fatiguePercent/100)`,
         formulaNote: "Consultez votre index sur le site officiel ITRA (itra.run). Votre index est disponible dans votre profil si vous avez des résultats validés."
       },
       {
-        subtitle: "Seuil Marche / Course",
-        text: `C'est le pourcentage de pente à partir duquel vous marchez plutôt que courir. Ce seuil influence directement la répartition terrain (descente/plat - montée courable - marche) affichée sur chaque segment.`,
+        subtitle: "Seuil Descente Technique",
+        text: `C'est le pourcentage de pente à partir duquel une descente est considérée comme "technique" ou "raide" selon le modèle énergétique de Minetti. Une descente douce est très économique (on y court vite), mais au-delà de ce seuil, la contraction musculaire excentrique vous ralentit considérablement.`,
         steps: [
-          "8-10% : Bon coureur en montée, marche peu en dehors des passages très pentus",
-          "12-15% : Traileur moyen (valeur par défaut)",
-          "18-25% : Marche dès les premières côtes, préfère préserver les jambes",
-          "Le seuil descend automatiquement avec la fatigue en cours de course (modèle empirique)."
+          "5-10% : Vous êtes très prudent en descente ou le terrain est extrêmement technique.",
+          "15% : Valeur par défaut, correspond à un traileur moyen sur terrain classique.",
+          "20-25% : Vous êtes un excellent descendeur, capable de conserver une bonne vitesse même sur des pentes fortes."
+        ]
+      },
+      {
+        subtitle: "Seuil Marche en Montée",
+        text: `C'est le pourcentage de pente à partir duquel vous cessez de courir pour vous mettre à marcher. Marcher dans de fortes pentes est biomécaniquement plus économique. Ce seuil s'ajuste dynamiquement : vous marcherez plus tôt (à des pentes plus faibles) au fur et à mesure que la fatigue s'accumule.`,
+        steps: [
+          "8-10% : Vous marchez dès que la pente s'accentue légèrement (gestion prudente ou terrain difficile).",
+          "12% : Valeur par défaut, typique pour les courses longues.",
+          "15%+ : Vous courez très longtemps dans les côtes (coureur élite ou trail court)."
         ]
       }
     ]

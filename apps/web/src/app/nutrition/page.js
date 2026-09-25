@@ -38,6 +38,7 @@ export default function NutritionPage() {
     carbs: "",
     calories: "",
     sodium: "",
+    water: "",
     weight: "",
     isOfficial: false
   });
@@ -126,6 +127,7 @@ export default function NutritionPage() {
         carbs: Number(formData.carbs),
         calories: Number(formData.calories),
         sodium: Number(formData.sodium),
+        water: Number(formData.water) || 0,
         weight: Number(formData.weight),
         isOfficial: isAdmin ? formData.isOfficial : false,
         userId: (isAdmin && formData.isOfficial) ? null : currentUser.uid,
@@ -173,6 +175,7 @@ export default function NutritionPage() {
       carbs: "",
       calories: "",
       sodium: "",
+      water: "",
       weight: "",
       isOfficial: false
     });
@@ -188,6 +191,7 @@ export default function NutritionPage() {
       carbs: p.carbs,
       calories: p.calories,
       sodium: p.sodium,
+      water: p.water || "",
       weight: p.weight,
       isOfficial: p.isOfficial
     });
@@ -207,6 +211,7 @@ export default function NutritionPage() {
           carbs: p.carbs,
           calories: p.calories,
           sodium: p.sodium,
+          water: p.water || 0,
           weight: p.weight,
           isOfficial: true,
           userId: null
@@ -292,6 +297,7 @@ export default function NutritionPage() {
               <th>Type</th>
               <th>Glucides</th>
               <th>Sodium</th>
+              <th>Eau</th>
               <th>Calories</th>
               <th>Actions</th>
             </tr>
@@ -327,6 +333,7 @@ export default function NutritionPage() {
                   </td>
                   <td>{product.carbs}g</td>
                   <td>{product.sodium}mg</td>
+                  <td>{product.water ? `${product.water}ml` : '-'}</td>
                   <td>{product.calories} kcal</td>
                   <td>
                     {canEdit && (
@@ -375,6 +382,9 @@ export default function NutritionPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <input required type="number" placeholder="Sodium (mg)" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-modifier-hover)', color: 'var(--text-primary)' }} value={formData.sodium} onChange={e => setFormData({...formData, sodium: e.target.value})} />
                 <input required type="number" placeholder="Calories (kcal)" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-modifier-hover)', color: 'var(--text-primary)' }} value={formData.calories} onChange={e => setFormData({...formData, calories: e.target.value})} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <input type="number" placeholder="Eau (ml)" style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-modifier-hover)', color: 'var(--text-primary)' }} value={formData.water} onChange={e => setFormData({...formData, water: e.target.value})} />
               </div>
 
               {isAdmin && (

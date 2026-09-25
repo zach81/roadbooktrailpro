@@ -7,7 +7,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { parseGPX, readFileAsText } from "@/lib/gpxService";
 import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Send } from "lucide-react";
-import { formatDecimalHoursToHHMM } from "@/lib/roadbookCalculator";
+
 import styles from "./dashboard.module.css";
 
 export default function Dashboard() {
@@ -27,14 +27,12 @@ export default function Dashboard() {
     if (authLoading) return;
     
     if (!currentUser) {
+      setLoading(false);
       router.push("/login");
       return;
     }
 
-    if (!currentUser) {
-      router.push("/login");
-      return;
-    }
+
 
     async function fetchRoadbooks() {
       try {
@@ -223,7 +221,7 @@ export default function Dashboard() {
               key={rb.id} 
               className={`card ${styles.roadbookCard}`} 
               onClick={() => router.push(`/editor/${rb.id}`)}
-              style={{ cursor: 'pointer', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-2px)' } }}
+              style={{ cursor: 'pointer' }}
             >
               <div className={styles.cardHeader} onClick={e => e.stopPropagation()}>
                 {editingId === rb.id ? (
@@ -270,17 +268,17 @@ export default function Dashboard() {
               <div className={styles.cardBody}>
                 <div className={styles.stat}>
                   <span className={styles.statLabel}>Distance</span>
-                  <span className={styles.statValue}>{rb.stats.distance.toFixed(1)} km</span>
+                  <span className={styles.statValue}>{rb.stats?.distance?.toFixed(1) || 0} km</span>
                 </div>
                 <div className={styles.stat}>
                   <span className={styles.statLabel}>Dénivelé Positif</span>
-                  <span className={styles.statValue} style={{ color: '#27ae60' }}>+{rb.stats.elevation.pos.toFixed(0)} m</span>
+                  <span className={styles.statValue} style={{ color: '#27ae60' }}>+{rb.stats?.elevation?.pos?.toFixed(0) || 0} m</span>
                 </div>
-                {rb.targetFast && (
+                {rb.itraIndex && (
                   <div className={styles.stat} style={{ gridColumn: 'span 2', background: 'var(--bg-surface-elevated)', padding: '8px', borderRadius: '8px', marginTop: '4px' }}>
-                    <span className={styles.statLabel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={14}/> Objectif</span>
+                    <span className={styles.statLabel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={14}/> Index UTMB</span>
                     <span className={styles.statValue} style={{ fontSize: '0.9rem' }}>
-                      <span style={{ color: '#10B981' }}>{formatDecimalHoursToHHMM(rb.targetFast)}</span>
+                      <span style={{ color: '#10B981' }}>{rb.itraIndex}</span>
                     </span>
                   </div>
                 )}

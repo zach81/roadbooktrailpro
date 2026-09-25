@@ -2,7 +2,10 @@
   width: 250px;
   background-color: var(--bg-surface);
   border-right: 1px solid var(--border-light);
-  height: 100%;
+  height: calc(100vh - 58px);
+  position: sticky;
+  top: 58px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 1.5rem 1rem;
