@@ -354,8 +354,7 @@ export function generateSegments(
   targetTimeH = null,
   upCostDivider = 80,
   downCostModifier = 1.0,
-  pacingStrategy = 'regular',
-  paceProfile = 'coach'
+  pacingStrategy = 'regular'
 ) {
   if (!points || points.length === 0 || orderedWaypoints.length < 2) return [];
 
@@ -453,8 +452,7 @@ export function generateSegments(
     : new Date().setHours(8, 0, 0, 0);
 
   const F = (fatiguePercent || 0);
-  const { flatSpeedKmh: baseFlatSpeedKmh } = estimateBasePaces(itraIndex);
-  const flatSpeedKmh = paceProfile === 'aggressive' ? baseFlatSpeedKmh * 1.05 : baseFlatSpeedKmh;
+  const { flatSpeedKmh } = estimateBasePaces(itraIndex);
 
   // Effort total pour calculer le facteur de fatigue exponentiel
   const E = rawSegments.reduce((acc, seg) => acc + seg.kmEffort, 0.001);
@@ -478,23 +476,13 @@ export function generateSegments(
     
     // Application de la stratégie de pacing
     const progress = E > 0 ? (currentX + (seg.kmEffort / 2)) / E : 0;
-    // Un départ de course (ultra) est TOUJOURS plus rapide que la moyenne,
-    // en raison de l'adrénaline, du peloton, et de l'absence de fatigue.
-    let basePacing = 1.0;
-    if (paceProfile === 'aggressive') {
-      // Départ très rapide (20% plus rapide = 0.8), fin difficile (20% plus lente = 1.2)
-      basePacing = 0.80 + (0.40 * progress);
-    } else {
-      // Coach (idéal) : Départ un peu plus rapide (10%), fin contrôlée (10% plus lente)
-      basePacing = 0.90 + (0.20 * progress);
-    }
-    
-    // On conserve pacingStrategy au cas où (prudent vs régulier) pour une personnalisation fine
-    let pacingMultiplier = basePacing;
+    let pacingMultiplier = 1.0;
     if (pacingStrategy === 'prudent') {
-      pacingMultiplier += 0.05; // on part plus lentement (+5% temps)
-    } else if (pacingStrategy === 'aggressive') { // ancien paramètre
-      pacingMultiplier -= 0.05; // on part encore plus vite (-5% temps)
+      // Prudent : départ plus lent (1.05), fin plus rapide (0.95) par rapport à la courbe normale
+      pacingMultiplier = 1.05 - 0.10 * progress;
+    } else if (pacingStrategy === 'aggressive') {
+      // Agressif : départ plus rapide (0.95), fin beaucoup plus lente (1.10)
+      pacingMultiplier = 0.95 + 0.15 * progress;
     }
     
     const fatigueFactor = baseFatigueFactor * pacingMultiplier;
@@ -714,7 +702,6 @@ export function deriveConfigFromITRA(itraIndex) {
   const downCostModifier = parseFloat((1.5 - ((index - 200) / 800) * 1.3).toFixed(2));
 
   const pacingStrategy = 'regular';
-  const paceProfile = 'coach';
 
   return {
     fatiguePercent,
@@ -722,8 +709,7 @@ export function deriveConfigFromITRA(itraIndex) {
     walkThreshold,
     upCostDivider,
     downCostModifier,
-    pacingStrategy,
-    paceProfile
+    pacingStrategy
   };
 }
 
