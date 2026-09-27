@@ -73,7 +73,7 @@ export default function RoadbookEditor() {
   const [upCostDivider, setUpCostDivider] = useState(80);
   const [downCostModifier, setDownCostModifier] = useState(1.0);
   const [pacingStrategy, setPacingStrategy] = useState("regular");
-  const [globalTechnicality, setGlobalTechnicality] = useState(2);
+  const [paceProfile, setPaceProfile] = useState("coach");
   const [carbTarget, setCarbTarget] = useState("60");
   const [sodiumTarget, setSodiumTarget] = useState("400");
   const [waterTarget, setWaterTarget] = useState("500");
@@ -108,11 +108,11 @@ export default function RoadbookEditor() {
         weather, parseFloat(descentThreshold) || 15, parseFloat(walkThreshold) || 12,
         targetTime ? parseFloat(targetTime) : null,
         parseFloat(upCostDivider) || 80, parseFloat(downCostModifier) || 1.0,
-        parseFloat(globalTechnicality) || 2, pacingStrategy
+        pacingStrategy, paceProfile
       );
       setSegments(newSegments);
     }
-  }, [points, waypoints, itraIndex, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold, walkThreshold, targetTime, upCostDivider, downCostModifier, globalTechnicality, pacingStrategy]);
+  }, [points, waypoints, itraIndex, fatiguePercent, startTime, officialDistance, officialElevation, weather, descentThreshold, walkThreshold, targetTime, upCostDivider, downCostModifier, pacingStrategy, paceProfile]);
 
   const formatTime = (isoString) => {
     if (!isoString) return "--h--";
@@ -200,8 +200,8 @@ export default function RoadbookEditor() {
               if (userData.pacingStrategy != null) setPacingStrategy(userData.pacingStrategy);
               else if (data.pacingStrategy != null) setPacingStrategy(data.pacingStrategy);
 
-              if (userData.globalTechnicality != null) setGlobalTechnicality(userData.globalTechnicality);
-              else if (data.globalTechnicality != null) setGlobalTechnicality(data.globalTechnicality);
+              if (userData.paceProfile != null) setPaceProfile(userData.paceProfile);
+              else if (data.paceProfile != null) setPaceProfile(data.paceProfile);
 
               if (userData.descentThreshold != null) setDescentThreshold(userData.descentThreshold);
               else if (data.descentThreshold != null) setDescentThreshold(data.descentThreshold);
@@ -220,7 +220,6 @@ export default function RoadbookEditor() {
           }
           if (data.descentThreshold != null) setDescentThreshold(data.descentThreshold);
           if (data.walkThreshold != null) setWalkThreshold(data.walkThreshold);
-          if (data.globalTechnicality != null) setGlobalTechnicality(data.globalTechnicality);
           if (data.inventory) {
             const inv = JSON.parse(data.inventory);
             setInventory(inv);
@@ -328,9 +327,9 @@ export default function RoadbookEditor() {
     }
   };
 
-  const saveRoadbook = useCallback(async () => {
+  const saveRoadbook = useCallback(async (silent = false) => {
     try {
-      setSaving(true);
+      if (!silent) setSaving(true);
       const docRef = doc(db, "roadbooks", id);
       await updateDoc(docRef, {
         name: editName,
@@ -338,6 +337,7 @@ export default function RoadbookEditor() {
         targetTime: targetTime,
         fatiguePercent: fatiguePercent,
         pacingStrategy: pacingStrategy,
+        paceProfile: paceProfile,
         startTime: startTime,
         officialDistance: parseFloat(officialDistance) || 0,
         officialElevation: parseFloat(officialElevation) || 0,
@@ -352,18 +352,26 @@ export default function RoadbookEditor() {
         walkThreshold: parseFloat(walkThreshold) || 12,
         upCostDivider: parseFloat(upCostDivider) || 80,
         downCostModifier: parseFloat(downCostModifier) || 1.0,
-        globalTechnicality: parseFloat(globalTechnicality) || 2,
         inventory: JSON.stringify(inventory),
         displayConfig: JSON.stringify(displayConfig),
       });
-      alert("Sauvegardé avec succès !");
+      if (!silent) alert("Sauvegardé avec succès !");
     } catch (err) {
       console.error("Erreur de sauvegarde", err);
-      alert("Erreur lors de la sauvegarde.");
+      if (!silent) alert("Erreur lors de la sauvegarde.");
     } finally {
-      setSaving(false);
+      if (!silent) setSaving(false);
     }
-  }, [id, editName, waypoints, targetTime, fatiguePercent, pacingStrategy, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, walkThreshold, upCostDivider, downCostModifier, globalTechnicality, inventory, displayConfig]);
+  }, [id, editName, waypoints, targetTime, fatiguePercent, pacingStrategy, paceProfile, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, walkThreshold, upCostDivider, downCostModifier, inventory, displayConfig]);
+
+  // Auto-save effect
+  useEffect(() => {
+    if (!displayLoaded) return;
+    const timeoutId = setTimeout(() => {
+      saveRoadbook(true);
+    }, 1500);
+    return () => clearTimeout(timeoutId);
+  }, [editName, waypoints, targetTime, fatiguePercent, pacingStrategy, paceProfile, startTime, officialDistance, officialElevation, carbTarget, sodiumTarget, waterTarget, caffeineTarget, weight, weather, itraIndex, descentThreshold, walkThreshold, upCostDivider, downCostModifier, inventory, displayConfig, displayLoaded, saveRoadbook]);
 
   // Inject navbar actions (sticky bar)
   useEffect(() => {
@@ -434,9 +442,11 @@ export default function RoadbookEditor() {
   // D- lissé non cumulé explicitement dans le seg object final, on l'additionne
   const displayEleNeg = segments.length > 0 ? segments.reduce((acc, seg) => acc + seg.elevationNeg, 0) : roadbook.stats.elevation.neg;
 
-  // Temps total estimé depuis les segments
-  const totalFastMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationFastMs, 0) : 0;
-  const totalSlowMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationSlowMs, 0) : 0;
+  // Temps total estimé depuis les segments (incluant les pauses pour correspondre exactement à l'objectif)
+  const totalFastMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationFastMs + ((s.to.pause || 0) * 60000), 0) : 0;
+  const totalSlowMs = segments.length > 0 ? segments.reduce((acc, s) => acc + s.durationSlowMs + ((s.to.pause || 0) * 60000), 0) : 0;
+  const totalFastHours = totalFastMs > 0 ? Math.floor(totalFastMs / 3600000) : (targetTime ? Math.floor(targetTime) : 0);
+  const totalFastMins = totalFastMs > 0 ? Math.floor((totalFastMs % 3600000) / 60000) : (targetTime ? Math.round((targetTime % 1) * 60) : 0);
   const fmtTotalFast = totalFastMs > 0 ? formatDuration(totalFastMs) : (targetTime ? `${targetTime}h` : '--');
   const fmtTotalSlow = totalSlowMs > 0 ? formatDuration(totalSlowMs) : (targetTime ? `${(targetTime * 1.2).toFixed(1)}h` : '--');
 
@@ -493,11 +503,13 @@ export default function RoadbookEditor() {
         </div>
         <div className={`${styles.statBox} ${styles.statBoxTime}`}>
           <span>⚡ Objectif de course</span>
-          <strong>
+          <strong style={{ color: targetTime ? '#10B981' : 'var(--text-secondary)' }}>
             {targetTime ? (
-              <span style={{ color: '#10B981' }}>{fmtTotalFast}</span>
+              <>
+                {totalFastHours}<small>h</small>{totalFastMins.toString().padStart(2, '0')}
+              </>
             ) : (
-              <span style={{ color: 'var(--text-secondary)' }}>Non défini</span>
+              "Non défini"
             )}
           </strong>
         </div>
@@ -540,7 +552,19 @@ export default function RoadbookEditor() {
             
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Cote ITRA / UTMB</label>
-              <input type="number" step="1" className="input-field" placeholder="Ex: 600" value={itraIndex} onChange={e => setItraIndex(e.target.value)} style={{ width: '100%' }} />
+              <input type="number" step="1" className="input-field" placeholder="Ex: 600" value={itraIndex} onChange={e => {
+                const newItra = e.target.value;
+                setItraIndex(newItra);
+                if (newItra && newItra > 0) {
+                  const config = deriveConfigFromITRA(parseFloat(newItra));
+                  setFatiguePercent(config.fatiguePercent);
+                  setDescentThreshold(config.descentThreshold);
+                  setWalkThreshold(config.walkThreshold);
+                  setUpCostDivider(config.upCostDivider);
+                  setDownCostModifier(config.downCostModifier);
+                  setPacingStrategy(config.pacingStrategy);
+                }
+              }} style={{ width: '100%' }} />
             </div>
           </div>
 
@@ -651,13 +675,10 @@ export default function RoadbookEditor() {
             </div>
             
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
-              <label className={styles.paramLabel}>Technicité Défaut</label>
-              <select className="input-field" value={globalTechnicality} onChange={e => setGlobalTechnicality(e.target.value)} style={{ width: '100%' }}>
-                <option value="1">🛣️ 1 - Très Roulant</option>
-                <option value="2">🌲 2 - Trail Classique</option>
-                <option value="3">🪨 3 - Technique</option>
-                <option value="4">🧗 4 - Très Technique</option>
-                <option value="5">🏔️ 5 - Extrême</option>
+              <label className={styles.paramLabel}>Profil d'allure</label>
+              <select className="input-field" value={paceProfile} onChange={e => setPaceProfile(e.target.value)} style={{ width: '100%' }}>
+                <option value="coach">🧠 Allure Coach (Idéal)</option>
+                <option value="aggressive">🔥 Allure Course (Agressif)</option>
               </select>
             </div>
           </div>
@@ -1067,6 +1088,20 @@ export default function RoadbookEditor() {
                           min="0" 
                           onChange={e => handleUpdateWaypoint(seg.to.id, { pause: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} 
                         />
+                      </div>
+                      
+                      <div className={styles.formGroup}>
+                        <label>Technicité</label>
+                        <select 
+                          value={seg.to.technicality || 2} 
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { technicality: parseFloat(e.target.value) })}
+                        >
+                          <option value="1">1 - Très Roulant</option>
+                          <option value="2">2 - Classique</option>
+                          <option value="3">3 - Technique</option>
+                          <option value="4">4 - Très Technique</option>
+                          <option value="5">5 - Extrême</option>
+                        </select>
                       </div>
                       
                       <div className={styles.checkboxesContainer}>

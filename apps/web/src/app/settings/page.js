@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { updateProfile } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage } from '@/lib/firebase';
-import { User, Upload, Loader2, Info, Activity, Mountain, TrendingUp, TrendingDown, Footprints, Droplets, Utensils, Coffee, HeartPulse } from 'lucide-react';
+import { User, Upload, Loader2, Info, Activity, Mountain, TrendingUp, TrendingDown, Footprints, Droplets, Utensils, Coffee, HeartPulse, Save } from 'lucide-react';
 import styles from './settings.module.css';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase';
@@ -20,9 +20,9 @@ const Tooltip = ({ text }) => {
       <Info size={16} className="text-gray-400 cursor-help hover:text-emerald-500 transition-colors" />
       <AnimatePresence>
         {show && (
-          <motion.div 
-            initial={{ opacity: 0, y: 5 }} 
-            animate={{ opacity: 1, y: 0 }} 
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
             className="absolute z-10 w-64 p-3 mt-8 bg-gray-800 text-white text-xs rounded-lg shadow-xl right-0 top-0 pointer-events-none"
           >
@@ -43,16 +43,16 @@ export default function SettingsPage() {
 
   const [itraIndex, setItraIndex] = useState("");
   const [weight, setWeight] = useState("");
-  
+
   // Custom config
   const [fatiguePercent, setFatiguePercent] = useState("");
   const [descentThreshold, setDescentThreshold] = useState("");
   const [walkThreshold, setWalkThreshold] = useState("");
   const [upCostDivider, setUpCostDivider] = useState("");
   const [downCostModifier, setDownCostModifier] = useState("");
-  const [globalTechnicality, setGlobalTechnicality] = useState("");
   const [pacingStrategy, setPacingStrategy] = useState("regular");
-  
+  const [paceProfile, setPaceProfile] = useState("coach");
+
   // Nutrition
   const [carbTarget, setCarbTarget] = useState("");
   const [sodiumTarget, setSodiumTarget] = useState("");
@@ -68,15 +68,23 @@ export default function SettingsPage() {
         const userDoc = await getDoc(doc(db, "users", currentUser.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
+
+          let defaultConfig = null;
+          if (data.itraIndex) {
+            defaultConfig = deriveConfigFromITRA(parseFloat(data.itraIndex));
+          }
+
           if (data.itraIndex != null) setItraIndex(data.itraIndex);
           if (data.weight != null) setWeight(data.weight);
-          if (data.fatiguePercent != null) setFatiguePercent(data.fatiguePercent);
-          if (data.descentThreshold != null) setDescentThreshold(data.descentThreshold);
-          if (data.walkThreshold != null) setWalkThreshold(data.walkThreshold);
-          if (data.upCostDivider != null) setUpCostDivider(data.upCostDivider);
-          if (data.downCostModifier != null) setDownCostModifier(data.downCostModifier);
-          if (data.globalTechnicality != null) setGlobalTechnicality(data.globalTechnicality);
-          if (data.pacingStrategy != null) setPacingStrategy(data.pacingStrategy);
+
+          setFatiguePercent(data.fatiguePercent != null ? data.fatiguePercent : (defaultConfig?.fatiguePercent || ""));
+          setDescentThreshold(data.descentThreshold != null ? data.descentThreshold : (defaultConfig?.descentThreshold || ""));
+          setWalkThreshold(data.walkThreshold != null ? data.walkThreshold : (defaultConfig?.walkThreshold || ""));
+          setUpCostDivider(data.upCostDivider != null ? data.upCostDivider : (defaultConfig?.upCostDivider || ""));
+          setDownCostModifier(data.downCostModifier != null ? data.downCostModifier : (defaultConfig?.downCostModifier || ""));
+          setPacingStrategy(data.pacingStrategy != null ? data.pacingStrategy : (defaultConfig?.pacingStrategy || "regular"));
+          setPaceProfile(data.paceProfile != null ? data.paceProfile : (defaultConfig?.paceProfile || "coach"));
+
           if (data.carbTarget != null) setCarbTarget(data.carbTarget);
           if (data.sodiumTarget != null) setSodiumTarget(data.sodiumTarget);
           if (data.waterTarget != null) setWaterTarget(data.waterTarget);
@@ -91,14 +99,15 @@ export default function SettingsPage() {
     loadUserData();
   }, [currentUser]);
 
-  if (!currentUser) {
-    if (typeof window !== 'undefined') router.push('/login');
-    return null;
-  }
+  useEffect(() => {
+    if (!currentUser && typeof window !== 'undefined') {
+      router.push('/login');
+    }
+  }, [currentUser, router]);
 
-  const handleSaveSettings = async () => {
-    setLoading(true);
-    setMessage(null);
+  const handleSaveSettings = async (silent = false) => {
+    if (!silent) setLoading(true);
+    if (!silent) setMessage(null);
     try {
       await updateDoc(doc(db, "users", currentUser.uid), {
         itraIndex: parseFloat(itraIndex) || null,
@@ -108,22 +117,33 @@ export default function SettingsPage() {
         walkThreshold: parseFloat(walkThreshold) || null,
         upCostDivider: parseFloat(upCostDivider) || null,
         downCostModifier: parseFloat(downCostModifier) || null,
-        globalTechnicality: parseFloat(globalTechnicality) || null,
         pacingStrategy: pacingStrategy || null,
+        paceProfile: paceProfile || null,
         carbTarget: parseInt(carbTarget) || null,
         sodiumTarget: parseInt(sodiumTarget) || null,
         waterTarget: parseInt(waterTarget) || null,
         caffeineTarget: parseInt(caffeineTarget) || null,
       });
-      setMessage({ type: 'success', text: 'Paramètres mis à jour avec succès !' });
-      setTimeout(() => setMessage(null), 3000);
+      if (!silent) {
+        setMessage({ type: 'success', text: 'Paramètres mis à jour avec succès !' });
+        setTimeout(() => setMessage(null), 3000);
+      }
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Erreur lors de la sauvegarde.' });
+      if (!silent) setMessage({ type: 'error', text: 'Erreur lors de la sauvegarde.' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialLoading) return;
+    const timeoutId = setTimeout(() => {
+      handleSaveSettings(true);
+    }, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [itraIndex, weight, fatiguePercent, descentThreshold, walkThreshold, upCostDivider, downCostModifier, pacingStrategy, paceProfile, carbTarget, sodiumTarget, waterTarget, caffeineTarget, initialLoading]);
+
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -152,22 +172,26 @@ export default function SettingsPage() {
     }
   };
 
+  if (!currentUser) {
+    return null;
+  }
+
   return (
     <div className={styles.settingsContainer}>
-      <div style={{marginBottom: '24px'}}>
-        <h2 style={{fontSize: '2rem', marginBottom: '8px', color: 'var(--text-primary)'}}>Configuration du coureur</h2>
-        <p style={{color: 'var(--text-secondary)'}}>
+      <div style={{ marginBottom: '24px' }}>
+        <h2 style={{ fontSize: '2rem', marginBottom: '8px', color: 'var(--text-primary)' }}>Configuration du coureur</h2>
+        <p style={{ color: 'var(--text-secondary)' }}>
           Ajustez vos données physiologiques. Ces paramètres servent de base à l'algorithme pour calculer vos temps de passage de façon hyper-personnalisée.
         </p>
       </div>
-      
+
       {/* Profil Photo */}
       <div className={styles.profileSection}>
         <div className={styles.sectionHeader}>
           <User size={24} className="text-emerald-500" />
           <h3>Profil Public</h3>
         </div>
-        
+
         <div className={styles.avatarGroup}>
           {currentUser.photoURL ? (
             <img src={currentUser.photoURL} alt="Avatar" className={styles.avatarPreview} />
@@ -176,17 +200,17 @@ export default function SettingsPage() {
               <User size={40} className={styles.avatarPlaceholder} />
             </div>
           )}
-          
+
           <div>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileChange} 
-              className={styles.fileInput} 
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className={styles.fileInput}
               accept="image/*"
             />
-            <button 
-              className="btn btn-secondary" 
+            <button
+              className="btn btn-secondary"
               onClick={() => fileInputRef.current.click()}
               disabled={loading}
             >
@@ -198,8 +222,8 @@ export default function SettingsPage() {
       </div>
 
       {!initialLoading ? (
-        <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}} transition={{delay: 0.1}}>
-          
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+
           {/* Base ITRA / Physique */}
           <div className={styles.profileSection}>
             <div className={styles.sectionHeader}>
@@ -209,7 +233,7 @@ export default function SettingsPage() {
             <p className={styles.sectionDescription}>
               La base du modèle prédictif. L'algorithme se base sur l'indice ITRA pour calibrer vos vitesses sur le plat, puis applique vos aptitudes en montée et descente.
             </p>
-            
+
             <div className={styles.grid}>
               <div className={styles.fieldGroup}>
                 <div className={styles.fieldHeader}>
@@ -218,9 +242,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>Calibre votre vitesse de base (VMA).</div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField} placeholder="Ex: 600"
-                    value={itraIndex} 
+                    value={itraIndex}
                     onChange={e => {
                       const newItra = e.target.value;
                       setItraIndex(newItra);
@@ -233,12 +257,12 @@ export default function SettingsPage() {
                         setDownCostModifier(config.downCostModifier);
                         setPacingStrategy(config.pacingStrategy);
                       }
-                    }} 
+                    }}
                   />
                   <span className={styles.inputUnit}>pts</span>
                 </div>
               </div>
-              
+
               <div className={styles.fieldGroup}>
                 <div className={styles.fieldHeader}>
                   <label className={styles.fieldLabel}><User size={16} /> Poids Corporel</label>
@@ -246,9 +270,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>Affecte la dépense énergétique.</div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField} placeholder="Ex: 70"
-                    value={weight} onChange={e => setWeight(e.target.value)} 
+                    value={weight} onChange={e => setWeight(e.target.value)}
                   />
                   <span className={styles.inputUnit}>kg</span>
                 </div>
@@ -265,9 +289,9 @@ export default function SettingsPage() {
             <p className={styles.sectionDescription}>
               Ajustez ces curseurs pour coller parfaitement à votre style (grimpeur, descendeur, diesel...).
             </p>
-            
+
             <div className={styles.grid}>
-              
+
               {/* Fatigue */}
               <div className={styles.fieldGroup}>
                 <div className={styles.fieldHeader}>
@@ -276,9 +300,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>% de perte de vitesse en fin de course.</div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField}
-                    value={fatiguePercent} onChange={e => setFatiguePercent(e.target.value)} 
+                    value={fatiguePercent} onChange={e => setFatiguePercent(e.target.value)}
                   />
                   <span className={styles.inputUnit}>%</span>
                 </div>
@@ -292,9 +316,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>% de pente déclenchant la marche.</div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField}
-                    value={walkThreshold} onChange={e => setWalkThreshold(e.target.value)} 
+                    value={walkThreshold} onChange={e => setWalkThreshold(e.target.value)}
                   />
                   <span className={styles.inputUnit}>%</span>
                 </div>
@@ -308,9 +332,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>% de pente max avant freinage.</div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField}
-                    value={descentThreshold} onChange={e => setDescentThreshold(e.target.value)} 
+                    value={descentThreshold} onChange={e => setDescentThreshold(e.target.value)}
                   />
                   <span className={styles.inputUnit}>%</span>
                 </div>
@@ -324,9 +348,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>Diviseur D+ (100 = Standard).</div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField}
-                    value={upCostDivider} onChange={e => setUpCostDivider(e.target.value)} 
+                    value={upCostDivider} onChange={e => setUpCostDivider(e.target.value)}
                   />
                   <span className={styles.inputUnit}>d+</span>
                 </div>
@@ -340,9 +364,9 @@ export default function SettingsPage() {
                 </div>
                 <div className={styles.fieldDesc}>Modulation de la courbe de fatigue.</div>
                 <div className={styles.inputWrapper}>
-                  <select 
+                  <select
                     className={styles.inputField}
-                    value={pacingStrategy} onChange={e => setPacingStrategy(e.target.value)} 
+                    value={pacingStrategy} onChange={e => setPacingStrategy(e.target.value)}
                     style={{ width: '100%', appearance: 'none' }}
                   >
                     <option value="prudent">Prudent (départ lent)</option>
@@ -352,25 +376,21 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Technicité Globale */}
+              {/* Pace Profile */}
               <div className={styles.fieldGroup}>
                 <div className={styles.fieldHeader}>
-                  <label className={styles.fieldLabel}><Mountain size={16} /> Technicité Globale (Défaut)</label>
-                  <Tooltip text="Définit la difficulté globale du terrain pour réduire votre vitesse. 1 = Route, 2 = Trail classique, 3 = Technique, 4 = Très technique, 5 = Extrême." />
+                  <label className={styles.fieldLabel}><TrendingUp size={16} /> Profil d'allure</label>
+                  <Tooltip text="Allure Coach : allures idéales prudentes recommandées par un coach. Allure Course : temps agressifs (environ 5% plus rapide)." />
                 </div>
-                <div className={styles.fieldDesc}>Modificateur de vitesse global (1 à 5).</div>
+                <div className={styles.fieldDesc}>Base de l'estimation de temps.</div>
                 <div className={styles.inputWrapper}>
-                  <select 
+                  <select
                     className={styles.inputField}
-                    value={globalTechnicality} onChange={e => setGlobalTechnicality(e.target.value)} 
+                    value={paceProfile} onChange={e => setPaceProfile(e.target.value)}
                     style={{ width: '100%', appearance: 'none' }}
                   >
-                    <option value="">Sélectionner</option>
-                    <option value="1">1 - Très Roulant</option>
-                    <option value="2">2 - Trail Classique</option>
-                    <option value="3">3 - Technique</option>
-                    <option value="4">4 - Très Technique</option>
-                    <option value="5">5 - Extrême</option>
+                    <option value="coach">Allure Coach (Idéal)</option>
+                    <option value="aggressive">Allure Course (Agressif)</option>
                   </select>
                 </div>
               </div>
@@ -387,16 +407,16 @@ export default function SettingsPage() {
             <p className={styles.sectionDescription}>
               Vos cibles horaires de ravitaillement. Ces données servent à générer la liste de courses ("caddie") de votre assistance.
             </p>
-            
+
             <div className={styles.grid}>
               <div className={styles.fieldGroup}>
                 <div className={styles.fieldHeader}>
                   <label className={styles.fieldLabel}>Glucides</label>
                 </div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField} placeholder="Ex: 60"
-                    value={carbTarget} onChange={e => setCarbTarget(e.target.value)} 
+                    value={carbTarget} onChange={e => setCarbTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>g / h</span>
                 </div>
@@ -407,9 +427,9 @@ export default function SettingsPage() {
                   <label className={styles.fieldLabel}><Droplets size={16} /> Eau</label>
                 </div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField} placeholder="Ex: 500"
-                    value={waterTarget} onChange={e => setWaterTarget(e.target.value)} 
+                    value={waterTarget} onChange={e => setWaterTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>ml / h</span>
                 </div>
@@ -420,9 +440,9 @@ export default function SettingsPage() {
                   <label className={styles.fieldLabel}>Sodium</label>
                 </div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField} placeholder="Ex: 400"
-                    value={sodiumTarget} onChange={e => setSodiumTarget(e.target.value)} 
+                    value={sodiumTarget} onChange={e => setSodiumTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>mg / h</span>
                 </div>
@@ -433,9 +453,9 @@ export default function SettingsPage() {
                   <label className={styles.fieldLabel}><Coffee size={16} /> Caféine</label>
                 </div>
                 <div className={styles.inputWrapper}>
-                  <input 
+                  <input
                     type="number" className={styles.inputField} placeholder="Ex: 50"
-                    value={caffeineTarget} onChange={e => setCaffeineTarget(e.target.value)} 
+                    value={caffeineTarget} onChange={e => setCaffeineTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>mg / h</span>
                 </div>
@@ -444,19 +464,14 @@ export default function SettingsPage() {
           </div>
 
           <div className={styles.saveButtonContainer} style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <button 
-              className={`btn btn-primary ${styles.saveBtn}`} 
-              onClick={handleSaveSettings}
-              disabled={loading}
-            >
-              {loading ? <Loader2 size={20} className="lucide-spin" style={{marginRight: '8px'}} /> : null}
-              {loading ? 'Sauvegarde...' : 'Enregistrer mon profil'}
-            </button>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Save size={14} /> Toutes les modifications sont enregistrées automatiquement.
+            </span>
           </div>
 
           <AnimatePresence>
             {message && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
@@ -467,7 +482,7 @@ export default function SettingsPage() {
               </motion.div>
             )}
           </AnimatePresence>
-          
+
         </motion.div>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '100px 0' }}>

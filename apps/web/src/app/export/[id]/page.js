@@ -125,8 +125,8 @@ export default function RoadbookSummary() {
               data.targetTime ? parseFloat(data.targetTime) : null,
               data.upCostDivider || 80,
               data.downCostModifier || 1.0,
-              data.globalTechnicality || 2,
-              data.pacingStrategy || 'regular'
+              data.pacingStrategy || 'regular',
+              data.paceProfile || 'coach'
             );
             
             setSegments(newSegments);
@@ -232,8 +232,14 @@ export default function RoadbookSummary() {
           <span className={styles.cardValue} style={{ fontSize: '1.2rem' }}>
             {segments.length > 0 ? (
               <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'}}>
-                <span style={{color: '#10B981', fontSize: '1rem'}}>Rapide: {formatTime(segments[segments.length - 1].arr_fast)}</span>
-                <span style={{color: '#F59E0B', fontSize: '1rem'}}>Lent: {formatTime(segments[segments.length - 1].arr_slow)}</span>
+                {roadbook.targetTime ? (
+                  <span style={{color: '#10B981', fontSize: '1rem'}}>Objectif: {formatTime(segments[segments.length - 1].arr_fast)}</span>
+                ) : (
+                  <>
+                    <span style={{color: '#10B981', fontSize: '1rem'}}>Rapide: {formatTime(segments[segments.length - 1].arr_fast)}</span>
+                    <span style={{color: '#F59E0B', fontSize: '1rem'}}>Lent: {formatTime(segments[segments.length - 1].arr_slow)}</span>
+                  </>
+                )}
               </div>
             ) : "--:--"}
           </span>
@@ -278,15 +284,17 @@ export default function RoadbookSummary() {
                 {(displayConfig.elePos || displayConfig.eleNeg) && <th>D+ / D- Cumul</th>}
                 {displayConfig.timeInter && <th>T. Inter.</th>}
                 {displayConfig.timeTotal && <th>T. Total</th>}
-                {displayConfig.etaFast && <th>ETA Rapide</th>}
-                {displayConfig.etaSlow && <th>ETA Lent</th>}
+                {displayConfig.etaFast && <th>{roadbook.targetTime ? "ETA Objectif" : "ETA Rapide"}</th>}
+                {(!roadbook.targetTime && displayConfig.etaSlow) && <th>ETA Lent</th>}
                 {displayConfig.cutoff && <th>BH</th>}
               </tr>
             </thead>
             <tbody>
               {segments.map((seg, i) => {
                 const totalDNeg = segments.slice(0, i + 1).reduce((acc, s) => acc + Math.abs(s.elevationNeg || 0), 0);
-                const totalDurationMs = segments.slice(0, i + 1).reduce((acc, s) => acc + s.durationSlowMs, 0);
+                const useFast = !!roadbook.targetTime;
+                const segDuration = useFast ? seg.durationFastMs : seg.durationSlowMs;
+                const totalDurationMs = segments.slice(0, i + 1).reduce((acc, s) => acc + (useFast ? s.durationFastMs : s.durationSlowMs), 0);
                 
                 return (
                 <tr key={i}>
@@ -304,10 +312,10 @@ export default function RoadbookSummary() {
                       {displayConfig.eleNeg && <span style={{ color: '#EF4444' }}>-{Math.round(totalDNeg)}</span>}
                     </td>
                   )}
-                  {displayConfig.timeInter && <td style={{ color: 'var(--text-secondary)' }}>{formatDurationMs(seg.durationSlowMs)}</td>}
+                  {displayConfig.timeInter && <td style={{ color: 'var(--text-secondary)' }}>{formatDurationMs(segDuration)}</td>}
                   {displayConfig.timeTotal && <td style={{ fontWeight: 'bold' }}>{formatDurationMs(totalDurationMs)}</td>}
                   {displayConfig.etaFast && <td style={{ color: '#10B981', fontWeight: 'bold' }}>{formatTime(seg.arr_fast)}</td>}
-                  {displayConfig.etaSlow && <td style={{ color: '#F59E0B', fontWeight: 'bold' }}>{formatTime(seg.arr_slow)}</td>}
+                  {(!roadbook.targetTime && displayConfig.etaSlow) && <td style={{ color: '#F59E0B', fontWeight: 'bold' }}>{formatTime(seg.arr_slow)}</td>}
                   {displayConfig.cutoff && <td style={{ color: '#EF4444', fontWeight: 'bold' }}>{seg.to.cutoffTime || "--:--"}</td>}
                 </tr>
               )})}

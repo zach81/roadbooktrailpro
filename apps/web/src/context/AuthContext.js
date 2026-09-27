@@ -69,20 +69,31 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
-        if (user.email && adminEmails.includes(user.email.toLowerCase())) {
-          setIsAdmin(true);
-        } else {
-          try {
-            const userDoc = await getDoc(doc(db, "users", user.uid));
-            if (userDoc.exists() && userDoc.data().role === 'admin') {
+        const isEmailAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
+        
+        try {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            if (userDoc.data().role === 'admin') {
+              setIsAdmin(true);
+            } else if (isEmailAdmin) {
+              // Synchroniser le statut admin dans Firestore pour les règles de sécurité
+              await setDoc(doc(db, "users", user.uid), { role: 'admin' }, { merge: true });
               setIsAdmin(true);
             } else {
               setIsAdmin(false);
             }
-          } catch (e) {
-            console.error("Error fetching user role", e);
-            setIsAdmin(false);
+          } else {
+            if (isEmailAdmin) {
+              await setDoc(doc(db, "users", user.uid), { email: user.email, role: 'admin', createdAt: new Date() }, { merge: true });
+              setIsAdmin(true);
+            } else {
+              setIsAdmin(false);
+            }
           }
+        } catch (e) {
+          console.error("Error fetching user role", e);
+          setIsAdmin(isEmailAdmin);
         }
       } else {
         setIsAdmin(false);

@@ -1,0 +1,31 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Fonction utilitaire pour vérifier si l'utilisateur est admin en lisant Firestore
+    function isAdmin() {
+      let userRef = firestore.path(/databases/(default)/documents/users/$(request.auth.uid));
+      return firestore.exists(userRef) && firestore.get(userRef).data.role == 'admin';
+    }
+
+    // ==========================================
+    // TRACES OFFICIELLES
+    // ==========================================
+    match /official_traces/{allPaths=**} {
+      // Tout utilisateur connecté peut télécharger une trace officielle
+      allow read: if request.auth != null;
+      
+      // Seul un admin peut uploader, modifier ou supprimer une trace
+      allow write: if request.auth != null && isAdmin();
+    }
+    
+    // ==========================================
+    // AUTRES FICHIERS
+    // ==========================================
+    match /{allPaths=**} {
+      // Les utilisateurs authentifiés peuvent lire et écrire leurs propres fichiers
+      // (À adapter selon les besoins de votre app)
+      allow read, write: if request.auth != null;
+    }
+  }
+}

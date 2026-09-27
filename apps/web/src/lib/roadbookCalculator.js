@@ -354,8 +354,8 @@ export function generateSegments(
   targetTimeH = null,
   upCostDivider = 80,
   downCostModifier = 1.0,
-  globalTechnicality = 2,
-  pacingStrategy = 'regular'
+  pacingStrategy = 'regular',
+  paceProfile = 'coach'
 ) {
   if (!points || points.length === 0 || orderedWaypoints.length < 2) return [];
 
@@ -453,7 +453,8 @@ export function generateSegments(
     : new Date().setHours(8, 0, 0, 0);
 
   const F = (fatiguePercent || 0);
-  const { flatSpeedKmh } = estimateBasePaces(itraIndex);
+  const { flatSpeedKmh: baseFlatSpeedKmh } = estimateBasePaces(itraIndex);
+  const flatSpeedKmh = paceProfile === 'aggressive' ? baseFlatSpeedKmh * 1.05 : baseFlatSpeedKmh;
 
   // Effort total pour calculer le facteur de fatigue exponentiel
   const E = rawSegments.reduce((acc, seg) => acc + seg.kmEffort, 0.001);
@@ -465,7 +466,7 @@ export function generateSegments(
     const standardKmEffort = seg.distance + (seg.elevationPos / 100);
     
     // Application de la technicité sur le segment
-    const technicalityLevel = seg.to.technicality || globalTechnicality || 2;
+    const technicalityLevel = seg.to.technicality || 2;
     const terrainFactor = getTerrainFactor(technicalityLevel);
     
     const freshHours = standardKmEffort / flatSpeedKmh;
@@ -477,13 +478,23 @@ export function generateSegments(
     
     // Application de la stratégie de pacing
     const progress = E > 0 ? (currentX + (seg.kmEffort / 2)) / E : 0;
-    let pacingMultiplier = 1.0;
+    // Un départ de course (ultra) est TOUJOURS plus rapide que la moyenne,
+    // en raison de l'adrénaline, du peloton, et de l'absence de fatigue.
+    let basePacing = 1.0;
+    if (paceProfile === 'aggressive') {
+      // Départ très rapide (20% plus rapide = 0.8), fin difficile (20% plus lente = 1.2)
+      basePacing = 0.80 + (0.40 * progress);
+    } else {
+      // Coach (idéal) : Départ un peu plus rapide (10%), fin contrôlée (10% plus lente)
+      basePacing = 0.90 + (0.20 * progress);
+    }
+    
+    // On conserve pacingStrategy au cas où (prudent vs régulier) pour une personnalisation fine
+    let pacingMultiplier = basePacing;
     if (pacingStrategy === 'prudent') {
-      // Prudent : départ plus lent (1.05), fin plus rapide (0.95) par rapport à la courbe normale
-      pacingMultiplier = 1.05 - 0.10 * progress;
-    } else if (pacingStrategy === 'aggressive') {
-      // Agressif : départ plus rapide (0.95), fin beaucoup plus lente (1.10)
-      pacingMultiplier = 0.95 + 0.15 * progress;
+      pacingMultiplier += 0.05; // on part plus lentement (+5% temps)
+    } else if (pacingStrategy === 'aggressive') { // ancien paramètre
+      pacingMultiplier -= 0.05; // on part encore plus vite (-5% temps)
     }
     
     const fatigueFactor = baseFatigueFactor * pacingMultiplier;
@@ -506,6 +517,7 @@ export function generateSegments(
   let totalOverrideMs = 0;
   let totalPredictedOverrideMs = 0;
   let totalPredictedMs = 0;
+  let totalPauseMs = 0;
 
   for (const seg of segmentsBase) {
     const nightIntens = getNightIntensity(new Date(cumulMsPass1 + (seg.fatiguedMs / 2)), baseLat, baseLon);
@@ -521,7 +533,9 @@ export function generateSegments(
       totalPredictedOverrideMs += segFinalMs;
     }
     
-    cumulMsPass1 += segFinalMs + ((seg.to.pause || 0) * 60000);
+    const pauseMs = (seg.to.pause || 0) * 60000;
+    totalPauseMs += pauseMs;
+    cumulMsPass1 += segFinalMs + pauseMs;
   }
 
   let fastRatio = totalPredictedOverrideMs > 0 ? (totalOverrideMs / totalPredictedOverrideMs) : 1.0;
@@ -529,7 +543,7 @@ export function generateSegments(
 
   if (targetTimeH) {
     const targetFastMs = targetTimeH * 3600000;
-    const remainingTargetFastMs = targetFastMs - totalOverrideMs;
+    const remainingTargetFastMs = targetFastMs - totalOverrideMs - totalPauseMs;
     fastRatio = (totalPredictedMs - totalPredictedOverrideMs > 0)
       ? Math.max(0, remainingTargetFastMs / (totalPredictedMs - totalPredictedOverrideMs))
       : 1.0;
@@ -700,6 +714,7 @@ export function deriveConfigFromITRA(itraIndex) {
   const downCostModifier = parseFloat((1.5 - ((index - 200) / 800) * 1.3).toFixed(2));
 
   const pacingStrategy = 'regular';
+  const paceProfile = 'coach';
 
   return {
     fatiguePercent,
@@ -707,7 +722,8 @@ export function deriveConfigFromITRA(itraIndex) {
     walkThreshold,
     upCostDivider,
     downCostModifier,
-    pacingStrategy
+    pacingStrategy,
+    paceProfile
   };
 }
 

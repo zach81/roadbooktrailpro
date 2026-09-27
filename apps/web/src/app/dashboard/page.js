@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { parseGPX, readFileAsText } from "@/lib/gpxService";
-import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Send } from "lucide-react";
+import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Send, Info } from "lucide-react";
 
 import styles from "./dashboard.module.css";
 
@@ -22,6 +22,23 @@ export default function Dashboard() {
   const [shareRoadbookId, setShareRoadbookId] = useState(null);
   const [shareEmail, setShareEmail] = useState("");
   const [sharing, setSharing] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hasSeenGuide = localStorage.getItem('hasSeenGuide');
+      if (!hasSeenGuide) {
+        setShowGuide(true);
+      }
+    }
+  }, []);
+
+  const dismissGuide = () => {
+    setShowGuide(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hasSeenGuide', 'true');
+    }
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -190,6 +207,10 @@ export default function Dashboard() {
         
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           
+          <button className="btn btn-secondary" onClick={() => setShowGuide(true)}>
+            <Info size={18} /> Marche à suivre
+          </button>
+
           <label className={`btn btn-primary ${styles.uploadBtn}`}>
             {uploading ? "Analyse en cours..." : (
               <>
@@ -207,6 +228,33 @@ export default function Dashboard() {
           </label>
         </div>
       </header>
+
+      {showGuide && (
+        <div style={{ background: 'var(--bg-surface-elevated)', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: '1px solid var(--primary-color)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-color)', fontSize: '1.25rem' }}>
+              <Info size={24} /> Comment ça marche ?
+            </h2>
+            <button onClick={dismissGuide} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+              <X size={24} />
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '8px', color: 'var(--text-primary)' }}>1. Importez votre trace</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>Uploadez votre fichier GPX. Le profil altimétrique sera analysé et découpé automatiquement.</p>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '8px', color: 'var(--text-primary)' }}>2. Réglez vos paramètres</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>Renseignez votre Index UTMB et vos objectifs de nutrition pour une planification sur-mesure.</p>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '8px', color: 'var(--text-primary)' }}>3. Analysez le Roadbook</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>Consultez vos temps de passages, allures cibles et exportez le résultat pour le jour J.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {roadbooks.length === 0 ? (
         <div className={styles.emptyState}>
