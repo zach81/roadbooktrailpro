@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { fetchCoachedAthletes, fetchAthleteLoad } from "@/lib/intervalsApi";
-import { Activity, TrendingUp, TrendingDown, Heart, Flame, Watch, RefreshCw, AlertCircle, Settings } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, Heart, Flame, Watch, RefreshCw, AlertCircle, Settings, User } from "lucide-react";
 import Link from "next/link";
+import styles from "./page.module.css";
 
 interface AthleteData {
   id: string;
@@ -135,7 +136,7 @@ export default function AthletesPage() {
     if (form < -30) return "text-red-500 bg-red-50"; // High Risk
     if (form < -10) return "text-orange-500 bg-orange-50"; // Optimal Training
     if (form <= 5) return "text-green-500 bg-green-50"; // Fresh
-    return "text-blue-500 bg-blue-50"; // Transition / Too fresh
+    return "text-slate-500 bg-slate-100"; // Transition / Too fresh
   };
 
   const getFormLabel = (form: number) => {
@@ -146,11 +147,11 @@ export default function AthletesPage() {
   };
 
   return (
-    <div className="py-0 md:py-4">
+    <div className={styles.dashboardContainer}>
       <div className="space-y-6">
         
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 pb-4 border-b border-[var(--border-subtle)]">
-          <h1 className="text-[2rem] font-bold text-[var(--text-primary)] m-0">Tableau de bord Athlètes</h1>
+        <header className={styles.header}>
+          <h1>Mes Athlètes</h1>
           <button 
             onClick={loadData}
             disabled={isLoading}
@@ -168,13 +169,13 @@ export default function AthletesPage() {
             <p className="text-gray-600 mb-6 max-w-md">
               Pour afficher vos données et celles de vos athlètes, vous devez configurer votre identifiant et votre clé API Intervals.icu.
             </p>
-            <Link href="/" className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition">
+            <Link href="/" className="flex items-center gap-2 px-6 py-3 bg-orange-500 text-white font-medium rounded-xl hover:bg-orange-600 transition">
               <Settings size={18} />
               Aller à l'accueil pour configurer
             </Link>
           </div>
         ) : isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={styles.grid}>
             {[1, 2, 3].map(i => (
               <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-pulse h-64">
                 <div className="flex items-center gap-4 mb-6">
@@ -201,89 +202,78 @@ export default function AthletesPage() {
                 <p>{warning}</p>
               </div>
             )}
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className={styles.grid}>
               {athletesData.map((athlete) => (
-                <div key={athlete.id} className={`card p-0 flex flex-col justify-between ${athlete.isMe ? 'ring-2 ring-blue-500/20 border-blue-200/50' : ''}`}>
+                <div 
+                  key={athlete.id} 
+                  className={styles.roadbookCard}
+                  style={athlete.isMe ? { border: '2px solid var(--color-primary)' } : {}}
+                >
                 
-                {/* Card Header */}
-                <div className="p-5 flex items-start justify-between border-b border-slate-100">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm ${athlete.isMe ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                      {athlete.name.charAt(0).toUpperCase()}
+                  {/* Card Header */}
+                  <div className={styles.cardHeader}>
+                    <h3 className={styles.cardHeaderTitle}>
+                      <User size={20} className={styles.iconPrimary} /> 
+                      {athlete.name}
+                      {athlete.isMe && (
+                        <span className="bg-orange-50 text-orange-600 border border-orange-200/50 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide ml-2">Moi</span>
+                      )}
+                    </h3>
+                  </div>
+
+                  {/* Main Metrics (PMC) */}
+                  <div className={styles.cardBody}>
+                    <div className={styles.stat} style={{ flex: '1 1 30%' }}>
+                      <span className={styles.statLabel}>Fitness (CTL)</span>
+                      <span className={styles.statValue} style={{ color: 'var(--color-primary)' }}>{athlete.ctl}</span>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                        {athlete.name}
-                        {athlete.isMe && <span className="bg-blue-50 text-blue-600 border border-blue-200/50 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">Moi</span>}
-                      </h3>
-                      <p className="text-xs text-slate-400 font-medium">ID: {athlete.id}</p>
+                    <div className={styles.stat} style={{ flex: '1 1 30%' }}>
+                      <span className={styles.statLabel}>Fatigue (ATL)</span>
+                      <span className={styles.statValue} style={{ color: '#a855f7' }}>{athlete.atl}</span>
+                    </div>
+                    <div className={styles.stat} style={{ flex: '1 1 30%' }}>
+                      <span className={styles.statLabel}>Form (TSB)</span>
+                      <span className={styles.statValue} style={{ color: athlete.form < 0 ? '#f43f5e' : '#10b981' }}>
+                        {athlete.form > 0 ? '+' : ''}{athlete.form}
+                      </span>
+                    </div>
+                    
+                    <div className={styles.stat} style={{ gridColumn: 'span 3', width: '100%' }}>
+                      <span className={`text-xs font-bold px-3 py-1.5 rounded-full text-center mt-2 ${getFormColor(athlete.form)}`}>
+                        {getFormLabel(athlete.form)}
+                      </span>
                     </div>
                   </div>
-                </div>
 
-                {/* Main Metrics (PMC) */}
-                <div className="p-6 bg-slate-50/30">
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div className="flex flex-col items-center">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Fitness</p>
-                      <div className="flex items-end justify-center gap-1">
-                        <span className="text-3xl font-black text-blue-600 leading-none">{athlete.ctl}</span>
-                        <span className="text-xs text-slate-400 font-semibold mb-0.5">CTL</span>
-                      </div>
+                  {/* Additional Scientific Metrics */}
+                  <div className={styles.cardBody} style={{ gap: '16px', background: 'transparent', padding: '0' }}>
+                    <div className={styles.stat} style={{ flex: '1 1 40%', background: 'var(--bg-surface-elevated)', padding: '12px', borderRadius: '8px' }}>
+                      <span className={styles.statLabel}><Flame size={12} /> FTP</span>
+                      <span className={styles.statValue} style={{ fontSize: '1.1rem' }}>{athlete.ftp ? `${athlete.ftp} W` : '-'}</span>
                     </div>
-                    <div className="flex flex-col items-center relative before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-px before:bg-slate-200 after:content-[''] after:absolute after:right-0 after:top-2 after:bottom-2 after:w-px after:bg-slate-200">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Fatigue</p>
-                      <div className="flex items-end justify-center gap-1">
-                        <span className="text-3xl font-black text-indigo-500 leading-none">{athlete.atl}</span>
-                        <span className="text-xs text-slate-400 font-semibold mb-0.5">ATL</span>
-                      </div>
+                    <div className={styles.stat} style={{ flex: '1 1 40%', background: 'var(--bg-surface-elevated)', padding: '12px', borderRadius: '8px' }}>
+                      <span className={styles.statLabel}><Heart size={12} /> FC Repos</span>
+                      <span className={styles.statValue} style={{ fontSize: '1.1rem' }}>{athlete.restingHR ? `${athlete.restingHR} bpm` : '-'}</span>
                     </div>
-                    <div className="flex flex-col items-center">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Form</p>
-                      <div className="flex items-end justify-center gap-1">
-                        <span className={`text-3xl font-black leading-none ${athlete.form < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{athlete.form > 0 ? '+' : ''}{athlete.form}</span>
-                        <span className="text-xs text-slate-400 font-semibold mb-0.5">TSB</span>
-                      </div>
+                    <div className={styles.stat} style={{ flex: '1 1 40%', background: 'var(--bg-surface-elevated)', padding: '12px', borderRadius: '8px' }}>
+                      <span className={styles.statLabel}><Watch size={12} /> Allure Seuil</span>
+                      <span className={styles.statValue} style={{ fontSize: '1.1rem' }}>{athlete.thresholdPace ? `${(athlete.thresholdPace/60).toFixed(2).replace('.',':')} /km` : '-'}</span>
+                    </div>
+                    <div className={styles.stat} style={{ flex: '1 1 40%', background: 'var(--bg-surface-elevated)', padding: '12px', borderRadius: '8px' }}>
+                      <span className={styles.statLabel}><Activity size={12} /> Poids</span>
+                      <span className={styles.statValue} style={{ fontSize: '1.1rem' }}>{athlete.weight ? `${athlete.weight} kg` : '-'}</span>
                     </div>
                   </div>
                   
-                  {/* Form Indicator Badge */}
-                  <div className="mt-5 flex justify-center">
-                    <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${getFormColor(athlete.form)}`}>
-                      {getFormLabel(athlete.form)}
-                    </span>
+                  {/* Actions */}
+                  <div className={styles.cardFooter}>
+                    <Link href={`/athletes/${athlete.id}`} className="btn btn-secondary" style={{ width: '100%' }}>
+                      <Settings size={16} /> Gérer / Planifier
+                    </Link>
                   </div>
+                  
                 </div>
-
-                {/* Additional Scientific Metrics */}
-                <div className="px-5 py-4 grid grid-cols-2 gap-3 bg-white border-t border-slate-100">
-                  <div className="bg-slate-50/50 rounded-lg p-3 flex flex-col items-center justify-center border border-slate-100">
-                    <div className="flex items-center gap-1.5 text-slate-400 mb-1.5"><Flame size={14} /><span className="text-[10px] uppercase font-bold tracking-wide">FTP / Seuil</span></div>
-                    <span className="font-bold text-slate-800">{athlete.ftp ? `${athlete.ftp} W` : '-'}</span>
-                  </div>
-                  <div className="bg-slate-50/50 rounded-lg p-3 flex flex-col items-center justify-center border border-slate-100">
-                    <div className="flex items-center gap-1.5 text-slate-400 mb-1.5"><Heart size={14} /><span className="text-[10px] uppercase font-bold tracking-wide">FC Repos</span></div>
-                    <span className="font-bold text-slate-800">{athlete.restingHR ? `${athlete.restingHR} bpm` : '-'}</span>
-                  </div>
-                  <div className="bg-slate-50/50 rounded-lg p-3 flex flex-col items-center justify-center border border-slate-100">
-                    <div className="flex items-center gap-1.5 text-slate-400 mb-1.5"><Watch size={14} /><span className="text-[10px] uppercase font-bold tracking-wide">Allure Seuil</span></div>
-                    <span className="font-bold text-slate-800">{athlete.thresholdPace ? `${(athlete.thresholdPace/60).toFixed(2).replace('.',':')} /km` : '-'}</span>
-                  </div>
-                  <div className="bg-slate-50/50 rounded-lg p-3 flex flex-col items-center justify-center border border-slate-100">
-                    <div className="flex items-center gap-1.5 text-slate-400 mb-1.5"><Activity size={14} /><span className="text-[10px] uppercase font-bold tracking-wide">Poids</span></div>
-                    <span className="font-bold text-slate-800">{athlete.weight ? `${athlete.weight} kg` : '-'}</span>
-                  </div>
-                </div>
-                
-                {/* Actions */}
-                <div className="p-5 bg-slate-50/30 border-t border-slate-100 flex justify-end mt-auto">
-                  <Link href={`/athletes/${athlete.id}`} className="btn btn-primary !text-white !no-underline shadow-sm w-full sm:w-auto">
-                    Gérer / Planifier
-                  </Link>
-                </div>
-                
-              </div>
-            ))}
+              ))}
             </div>
           </div>
         )}

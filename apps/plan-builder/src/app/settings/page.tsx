@@ -1,6 +1,6 @@
 export default function SettingsPage() {
   return (
-    <div className="flex-1 bg-gradient-to-br from-slate-50 to-blue-50/30 p-4 md:p-8">
+    <div className="flex-1 bg-gradient-to-br from-slate-50 to-orange-50/30 p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h1 className="text-2xl font-bold text-slate-900">Paramètres</h1>

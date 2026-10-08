@@ -14,7 +14,10 @@ import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, get
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
 
+import { nutritionDatabase } from "@/lib/nutritionData";
+
 const DEFAULT_NUTRITION_PRODUCTS = [
+  ...nutritionDatabase,
   { id: "gen-1", name: "Gel Énergétique", brand: "Générique", carbs: 22, sodium: 50, water: 0, caffeine: 0 },
   { id: "gen-2", name: "Gel Énergétique (+ Caféine)", brand: "Générique", carbs: 22, sodium: 50, water: 0, caffeine: 50 },
   { id: "gen-3", name: "Barre Énergétique", brand: "Générique", carbs: 30, sodium: 100, water: 0, caffeine: 0 },
@@ -746,13 +749,101 @@ export default function RoadbookEditor() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className={styles.sectionTitle}>🎒 Stratégie Nutritionnelle</h3>
-            <button 
-              className="btn btn-secondary"
-              onClick={() => setShowNutritionModal(true)}
-              style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-            >
-              Gérer mes produits
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowNutritionModal(!showNutritionModal)}
+                style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+              >
+                Gérer mes produits {showNutritionModal ? '▲' : '▼'}
+              </button>
+              
+              {showNutritionModal && (
+                <div style={{ 
+                  position: 'absolute', 
+                  top: '100%', 
+                  right: 0, 
+                  marginTop: '8px', 
+                  background: 'var(--bg-surface)', 
+                  padding: '16px', 
+                  borderRadius: 'var(--radius-md)', 
+                  width: '320px', 
+                  maxHeight: '400px',
+                  overflowY: 'auto',
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '8px', 
+                  boxShadow: 'var(--shadow-xl)', 
+                  border: '1px solid var(--border-light)', 
+                  zIndex: 50 
+                }}>
+                  <div style={{ fontWeight: 'bold', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', marginBottom: '8px' }}>
+                    Sélection des produits
+                  </div>
+                  {(() => {
+                    const allProductsMap = new Map();
+                    DEFAULT_NUTRITION_PRODUCTS.forEach(p => allProductsMap.set(p.name, p));
+                    dbProducts.forEach(p => allProductsMap.set(p.name, p));
+                    inventory.forEach(p => {
+                      if (!allProductsMap.has(p.name)) {
+                        allProductsMap.set(p.name, { ...p, isLegacy: true });
+                      }
+                    });
+                    return Array.from(allProductsMap.values());
+                  })().map(p => {
+                    const isSelected = inventory.some(item => item.name === p.name || item.id === p.id);
+                    return (
+                      <label 
+                        key={p.id || p.name} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '12px', 
+                          padding: '8px', 
+                          background: isSelected ? 'var(--bg-surface-elevated)' : 'transparent', 
+                          borderRadius: 'var(--radius-sm)', 
+                          cursor: 'pointer', 
+                          transition: 'all 0.2s' 
+                        }}
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setInventory([...inventory, {
+                                id: p.id || `custom-${Date.now()}`,
+                                name: p.name,
+                                carbs: p.carbs || 0,
+                                sodium: p.sodium || 0,
+                                caffeine: p.caffeine || 0,
+                                water: p.water || 0
+                              }]);
+                            } else {
+                              setInventory(inventory.filter(item => item.name !== p.name && item.id !== p.id));
+                            }
+                          }}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--color-primary)', flexShrink: 0 }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {p.brand ? `${p.brand} ${p.name}` : p.name}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {[
+                              p.carbs ? `${p.carbs}g Glu` : null,
+                              p.sodium ? `${p.sodium}mg Na` : null,
+                              p.water ? `${p.water}ml` : null,
+                              p.caffeine ? `${p.caffeine}mg Caf` : null
+                            ].filter(Boolean).join(' • ')}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
             Sélectionnez les produits que vous prévoyez d'utiliser ou d'avoir à disposition.
@@ -778,89 +869,6 @@ export default function RoadbookEditor() {
             )}
           </div>
         </div>
-
-        {/* Modal Nutrition */}
-        {showNutritionModal && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setShowNutritionModal(false)}>
-            <div style={{ background: 'var(--bg-surface)', padding: '24px', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '900px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: 'var(--shadow-xl)', border: '1px solid var(--border-light)' }} onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '16px' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>Sélection des produits</h2>
-                <button onClick={() => setShowNutritionModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px' }}>&times;</button>
-              </div>
-              
-              <div style={{ overflowY: 'auto', flex: 1, paddingRight: '8px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                  {(() => {
-                    const allProductsMap = new Map();
-                    DEFAULT_NUTRITION_PRODUCTS.forEach(p => allProductsMap.set(p.name, p));
-                    dbProducts.forEach(p => allProductsMap.set(p.name, p));
-                    inventory.forEach(p => {
-                      if (!allProductsMap.has(p.name)) {
-                        allProductsMap.set(p.name, { ...p, isLegacy: true });
-                      }
-                    });
-                    return Array.from(allProductsMap.values());
-                  })().map(p => {
-                    const isSelected = inventory.some(item => item.name === p.name || item.id === p.id);
-                    return (
-                      <label 
-                        key={p.id || p.name} 
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '12px', 
-                          padding: '12px', 
-                          background: isSelected ? 'var(--bg-surface-elevated)' : 'var(--bg-surface)', 
-                          border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--border-subtle)'}`, 
-                          borderRadius: 'var(--radius-md)', 
-                          cursor: 'pointer', 
-                          transition: 'all 0.2s' 
-                        }}
-                      >
-                        <input 
-                          type="checkbox" 
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setInventory([...inventory, {
-                                id: p.id || `custom-${Date.now()}`,
-                                name: p.name,
-                                carbs: p.carbs || 0,
-                                sodium: p.sodium || 0,
-                                caffeine: p.caffeine || 0,
-                                water: p.water || 0
-                              }]);
-                            } else {
-                              setInventory(inventory.filter(item => item.name !== p.name && item.id !== p.id));
-                            }
-                          }}
-                          style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: 'var(--color-primary)', flexShrink: 0 }}
-                        />
-                        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                          <span style={{ fontSize: '0.9rem', fontWeight: '600', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                            {p.brand ? `${p.brand} ${p.name}` : p.name}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                            {[
-                              p.carbs ? `${p.carbs}g Glu` : null,
-                              p.sodium ? `${p.sodium}mg Na` : null,
-                              p.water ? `${p.water}ml` : null,
-                              p.caffeine ? `${p.caffeine}mg Caf` : null
-                            ].filter(Boolean).join(' • ')}
-                          </span>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid var(--border-light)' }}>
-                <button className="btn btn-primary" onClick={() => setShowNutritionModal(false)}>Terminer</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className={styles.layout}>

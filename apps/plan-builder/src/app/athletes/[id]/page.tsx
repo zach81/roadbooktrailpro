@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateMacrocycle, generateWorkoutsForMacrocycle } from "@/lib/trainingEngine";
-import { uploadWorkoutsToIntervals, fetchCoachedAthletes, deleteWorkoutsFromIntervals, fetchAthleteLoad, uploadPhasesToIntervals } from "@/lib/intervalsApi";
+import { uploadWorkoutsToIntervals, fetchCoachedAthletes, deleteWorkoutsFromIntervals, fetchAthleteLoad, uploadPhasesToIntervals, uploadWeeklyTargetsToIntervals } from "@/lib/intervalsApi";
 import { getAthletesFromFirebase, saveAthletesToFirebase, saveWorkoutTemplate, saveAthletePlan, getAthletePlans } from "@/lib/firebaseUtils";
 import { Macrocycle, Workout } from "@/types";
 import WorkoutEditorModal from "@/components/WorkoutEditorModal";
 import WorkoutLibraryModal from "@/components/WorkoutLibraryModal";
 import AiOptimizerModal from "@/components/AiOptimizerModal";
 import WeeklyCalendar from "@/components/WeeklyCalendar";
+import { useAuth } from "@/context/AuthContext";
 import {
   LineChart,
   Line,
@@ -121,8 +122,8 @@ const generateClimberProfile = (stats: any) => {
   const zExtreme = (wKg - 3.5) / 0.6;
   
   return [
-    { slope: 'Faux Plat (3-5%)', efficiency: Math.round(zScoreToPercentile(zFalseFlat)), fill: '#3b82f6' },
-    { slope: 'Moyenne (8-10%)', efficiency: Math.round(zScoreToPercentile(zMedium)), fill: '#8b5cf6' },
+    { slope: 'Faux Plat (3-5%)', efficiency: Math.round(zScoreToPercentile(zFalseFlat)), fill: '#f97316' },
+    { slope: 'Moyenne (8-10%)', efficiency: Math.round(zScoreToPercentile(zMedium)), fill: '#10b981' },
     { slope: 'Forte (15-20%)', efficiency: Math.round(zScoreToPercentile(zSteep)), fill: '#f43f5e' },
     { slope: 'Extrême (+25%)', efficiency: Math.round(zScoreToPercentile(zExtreme)), fill: '#f97316' },
   ];
@@ -210,6 +211,7 @@ export default function AthletePlanner() {
   const params = useParams();
   const router = useRouter();
   const athleteId = params.id as string;
+  const { currentUser } = useAuth();
 
   const [selectedAthlete, setSelectedAthlete] = useState(athleteId);
   const [athleteStats, setAthleteStats] = useState<any>(null);
@@ -223,6 +225,7 @@ export default function AthletePlanner() {
   const [libraryTypeFilter, setLibraryTypeFilter] = useState('');
   const [exportStatus, setExportStatus] = useState("");
   const [showExportConfig, setShowExportConfig] = useState(false);
+  const [exportMode, setExportMode] = useState<"TARGETS_ONLY" | "SIMPLIFIED" | "FULL">("TARGETS_ONLY");
   const [intervalsAthleteId, setIntervalsAthleteId] = useState("");
   const [intervalsApiKey, setIntervalsApiKey] = useState("");
   const [configPendingAction, setConfigPendingAction] = useState<"EXPORT" | "FETCH" | null>(null);
@@ -246,9 +249,9 @@ export default function AthletePlanner() {
     if (storedKey) setIntervalsApiKey(storedKey);
 
     const initAthletes = async () => {
-      if (storedId) {
+      if (currentUser?.uid) {
         // Load from Firebase first
-        const cachedAthletes = await getAthletesFromFirebase(storedId);
+        const cachedAthletes = await getAthletesFromFirebase(currentUser.uid);
         let currentAthletes = cachedAthletes || [];
         
         if (currentAthletes.length > 0) {
@@ -270,7 +273,7 @@ export default function AthletePlanner() {
             }
             
             // Also fetch all athletes to update the list/names in background if needed
-            const data = await fetchCoachedAthletes(storedId, storedKey);
+            const data = await fetchCoachedAthletes(storedId as string, storedKey);
             if (Array.isArray(data) && data.length > 0) {
               const fetchedAthletes = data.map((a: any, index: number) => {
                 const id = a.id || a.athlete?.id || a.athlete_id || `unknown-${index}`;
@@ -286,7 +289,9 @@ export default function AthletePlanner() {
               }
               
               setAthletes(fetchedAthletes);
-              await saveAthletesToFirebase(storedId, fetchedAthletes);
+              if (currentUser?.uid) {
+                await saveAthletesToFirebase(currentUser.uid, fetchedAthletes);
+              }
               
               const currentAthleteData = fetchedAthletes.find((a: any) => a.id === athleteId);
               if (currentAthleteData) {
@@ -310,8 +315,8 @@ export default function AthletePlanner() {
         }
         
         // Charger les plans sauvegardés
-        if (storedId) {
-          const plans = await getAthletePlans(storedId, athleteId as string);
+        if (currentUser?.uid) {
+          const plans = await getAthletePlans(currentUser.uid, athleteId as string);
           setSavedPlans(plans);
         }
       }
@@ -385,7 +390,9 @@ export default function AthletePlanner() {
         setSelectedAthlete(fetchedAthletes[0].id);
         
         // Save to Firebase
-        await saveAthletesToFirebase(intervalsAthleteId, fetchedAthletes);
+        if (currentUser?.uid) {
+          await saveAthletesToFirebase(currentUser.uid, fetchedAthletes);
+        }
         
         alert("Athlètes synchronisés avec succès !");
       } else {
@@ -434,7 +441,7 @@ export default function AthletePlanner() {
   const getPhaseColor = (phase: string) => {
     switch (phase) {
       case 'Base': return '#4ade80';
-      case 'Build': return '#3b82f6';
+      case 'Build': return '#f97316';
       case 'Peak': return '#f59e0b';
       case 'Taper': return '#fcd34d';
       case 'Recovery': return '#9ca3af';
@@ -448,9 +455,9 @@ export default function AthletePlanner() {
       case 'Tempo': 
       case 'Threshold': return '#f59e0b';
       case 'Endurance': 
-      case 'Long Run': return '#3b82f6';
+      case 'Long Run': return '#f97316';
       case 'Recovery': return '#10b981';
-      case 'Strength': return '#8b5cf6';
+      case 'Strength': return '#10b981';
       default: return '#9ca3af';
     }
   };
@@ -500,12 +507,12 @@ export default function AthletePlanner() {
   };
 
   const handleSaveAsTemplate = async (workout: Workout) => {
-    if (!intervalsAthleteId) {
-      alert("ID Coach manquant pour sauvegarder un template.");
+    if (!currentUser?.uid) {
+      alert("Vous devez être connecté pour sauvegarder un template.");
       return;
     }
     try {
-      await saveWorkoutTemplate(intervalsAthleteId, workout);
+      await saveWorkoutTemplate(currentUser.uid, workout);
       alert("Template sauvegardé avec succès dans la bibliothèque !");
     } catch (e) {
       alert("Erreur lors de la sauvegarde du template.");
@@ -527,13 +534,13 @@ export default function AthletePlanner() {
   };
 
   const handleSavePlanToFirebase = async () => {
-    if (!intervalsAthleteId || !plan) {
-      alert("Veuillez configurer votre compte (Intervals API) pour avoir un ID Coach.");
+    if (!currentUser?.uid || !plan) {
+      alert("Vous devez être connecté pour sauvegarder un plan.");
       return;
     }
     setExportStatus("Sauvegarde dans Firebase...");
     try {
-      await saveAthletePlan(intervalsAthleteId, selectedAthlete, {
+      await saveAthletePlan(currentUser.uid, selectedAthlete, {
         macrocycle: plan,
         workouts: workouts,
         config: planConfig
@@ -662,8 +669,15 @@ export default function AthletePlanner() {
         workoutsToExport = workouts.filter(w => new Date(w.date).getTime() <= maxDate);
       }
       
-      setExportStatus("Exportation en cours (entraînements)...");
-      await uploadWorkoutsToIntervals(intervalsAthleteId, intervalsApiKey, workoutsToExport);
+      
+      if (exportMode === 'TARGETS_ONLY') {
+        setExportStatus("Exportation en cours (objectifs hebdo)...");
+        await uploadWeeklyTargetsToIntervals(intervalsAthleteId, intervalsApiKey, workoutsToExport);
+      } else {
+        setExportStatus("Exportation en cours (entraînements)...");
+        await uploadWorkoutsToIntervals(intervalsAthleteId, intervalsApiKey, workoutsToExport, exportMode === 'SIMPLIFIED');
+      }
+      
       setExportStatus("Exportation en cours (phases)...");
       
       // Assurer que le plan envoyé à uploadPhasesToIntervals a une startDate valide
@@ -764,11 +778,11 @@ export default function AthletePlanner() {
                 <div className="p-6 grid grid-cols-3 gap-4 text-center bg-[var(--bg-surface)]">
                   <div>
                     <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Fitness (CTL)</p>
-                    <div className="text-4xl font-black text-blue-600">{athleteStats.ctl}</div>
+                    <div className="text-4xl font-black text-orange-600">{athleteStats.ctl}</div>
                   </div>
                   <div className="relative before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-px before:bg-[var(--border-subtle)] after:content-[''] after:absolute after:right-0 after:top-2 after:bottom-2 after:w-px after:bg-[var(--border-subtle)]">
                     <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Fatigue (ATL)</p>
-                    <div className="text-4xl font-black text-indigo-500">{athleteStats.atl}</div>
+                    <div className="text-4xl font-black text-emerald-500">{athleteStats.atl}</div>
                   </div>
                   <div>
                     <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Forme (TSB)</p>
@@ -822,7 +836,7 @@ export default function AthletePlanner() {
                       <PolarGrid stroke="#e2e8f0" />
                       <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 12, fontWeight: 600 }} />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                      <Radar name="Athlete" dataKey="A" stroke="#6366f1" strokeWidth={2} fill="#818cf8" fillOpacity={0.5} />
+                      <Radar name="Athlete" dataKey="A" stroke="#10b981" strokeWidth={2} fill="#34d399" fillOpacity={0.5} />
                       <Tooltip formatter={(value: any) => [`${value}/100`, "Score"]} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                     </RadarChart>
                   </ResponsiveContainer>
@@ -848,15 +862,15 @@ export default function AthletePlanner() {
                       <AreaChart data={durabilityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <defs>
                           <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="distance" stroke="#9ca3af" tick={{fontSize: 12, fill: '#64748b', fontWeight: 500}} axisLine={false} tickLine={false} dy={10} />
                         <YAxis domain={[0, 100]} stroke="#9ca3af" tick={{fontSize: 12, fill: '#64748b', fontWeight: 500}} axisLine={false} tickLine={false} />
                         <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: 'none', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: '#0f172a', fontWeight: 700 }} formatter={(value: any, name: any, props: any) => [`${value} pts`, props.payload.label]} labelFormatter={(label) => `Distance : ${label}`} />
-                        <Area type="monotone" dataKey="score" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" />
+                        <Area type="monotone" dataKey="score" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -885,7 +899,7 @@ export default function AthletePlanner() {
                         <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: 'none', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: '#0f172a', fontWeight: 700 }} labelFormatter={(label) => `Temps : ${label}`} />
                         <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 600, paddingTop: '10px' }} />
                         <Line yAxisId="left" type="monotone" name="FC (%)" dataKey="frequence_cardiaque" stroke="#f43f5e" strokeWidth={3} dot={false} activeDot={{r: 6}} />
-                        <Line yAxisId="right" type="stepAfter" name="Puissance (%)" dataKey="puissance" stroke="#3b82f6" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                        <Line yAxisId="right" type="stepAfter" name="Puissance (%)" dataKey="puissance" stroke="#f97316" strokeWidth={2} dot={false} strokeDasharray="5 5" />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -980,13 +994,13 @@ export default function AthletePlanner() {
                 </div>
                 <div className="card p-6 flex flex-col justify-center">
                   <p className="text-[var(--text-secondary)] text-sm font-medium">TSS Max Prévu</p>
-                  <p className="text-2xl font-extrabold text-blue-600 mt-1">
+                  <p className="text-2xl font-extrabold text-orange-600 mt-1">
                     {Math.max(...chartData.map(d => d.tss))}
                   </p>
                 </div>
                 <div className="card p-6 flex flex-col justify-center">
                   <p className="text-[var(--text-secondary)] text-sm font-medium">Charge Totale (TSS)</p>
-                  <p className="text-2xl font-extrabold text-blue-500 mt-1">
+                  <p className="text-2xl font-extrabold text-orange-500 mt-1">
                     {chartData.reduce((acc, d) => acc + d.tss, 0)}
                   </p>
                 </div>
@@ -1027,12 +1041,23 @@ export default function AthletePlanner() {
                         Génération IA en cours...
                       </span>
                     )}
-                    <button 
-                      onClick={handleExport}
-                      className="btn btn-secondary"
-                    >
-                      <Download size={16} /> Exporter
-                    </button>
+                    <div className="flex items-center bg-gray-100 rounded-lg overflow-hidden border border-gray-200 p-1">
+                      <select 
+                        value={exportMode} 
+                        onChange={(e) => setExportMode(e.target.value as "TARGETS_ONLY" | "SIMPLIFIED" | "FULL")}
+                        className="bg-transparent text-sm font-medium text-gray-700 py-1.5 px-3 outline-none cursor-pointer border-r border-gray-300"
+                      >
+                        <option value="TARGETS_ONLY">Objectifs Hebdo (TSS) (Recommandé)</option>
+                        <option value="SIMPLIFIED">Séances (Textes Résumés)</option>
+                        <option value="FULL">Séances (Détails Structurés)</option>
+                      </select>
+                      <button 
+                        onClick={handleExport}
+                        className="btn btn-secondary !border-none !shadow-none !bg-transparent !py-1.5"
+                      >
+                        <Download size={16} /> Exporter
+                      </button>
+                    </div>
                   </div>
                 </div>
                 
@@ -1316,7 +1341,7 @@ export default function AthletePlanner() {
         <WorkoutLibraryModal
           isOpen={true}
           onClose={() => setIsLibraryOpen(false)}
-          coachId={intervalsAthleteId}
+          coachId={currentUser?.uid || intervalsAthleteId}
           initialTypeFilter={editingWorkout?.type}
           onSelect={handleLibrarySelect}
         />

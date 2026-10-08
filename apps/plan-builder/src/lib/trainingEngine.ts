@@ -4,7 +4,16 @@ import { collection, getDocs } from 'firebase/firestore';
 /**
  * Converts a Workout object into an Intervals.icu compatible text description
  */
-export function generateIntervalsWorkoutText(workout: Workout): string {
+export function generateIntervalsWorkoutText(workout: Workout, isSimplified: boolean = true): string {
+  if (isSimplified) {
+    return `🎯 Objectif Charge : ${workout.totalTss} TSS
+⏱️ Durée estimée : ${workout.estimatedDuration} min
+📍 Phase : ${workout.name.split(' - ')[0]}
+🏔️ Terrain : ${workout.terrain}
+
+*Les détails spécifiques et intervalles de cette séance seront adaptés par le coach.*`;
+  }
+
   const phaseTexts: string[] = [];
 
   for (const phase of workout.phases) {
@@ -17,11 +26,12 @@ export function generateIntervalsWorkoutText(workout: Workout): string {
       if (phase.isHill) workDesc += ` (Côte/D+)`;
       if (phase.cadenceTarget) workDesc += ` @ ${phase.cadenceTarget}rpm`;
       
-      let workTarget = phase.workZone ? phase.workZone : (phase.workIntensity ? `${phase.workIntensity}%` : (phase.workRpe ? `RPE${phase.workRpe}` : ''));
+      // Intervals.icu parses RPE better as a simple number or we use % HR / % Pace if available.
+      let workTarget = phase.workZone ? phase.workZone : (phase.workIntensity ? `${phase.workIntensity}%` : (phase.workRpe ? `${phase.workRpe * 10}%` : ''));
       stepText += `- ${phase.workDuration}m ${workTarget}${workDesc}\n`;
       
       // Rest step
-      let restTarget = phase.restZone ? phase.restZone : (phase.restIntensity ? `${phase.restIntensity}%` : (phase.restRpe ? `RPE${phase.restRpe}` : ''));
+      let restTarget = phase.restZone ? phase.restZone : (phase.restIntensity ? `${phase.restIntensity}%` : (phase.restRpe ? `${phase.restRpe * 10}%` : ''));
       stepText += `- ${phase.restDuration}m ${restTarget}`;
       
       phaseTexts.push(stepText);
@@ -29,9 +39,9 @@ export function generateIntervalsWorkoutText(workout: Workout): string {
       // Standard single step
       let intensityText = '60%'; // default warmup
       if (phase.type === 'active') {
-        intensityText = phase.workZone ? phase.workZone : (phase.rpe ? `RPE ${phase.rpe}` : `${phase.intensityTss}%`);
+        intensityText = phase.workZone ? phase.workZone : (phase.rpe ? `${phase.rpe * 10}%` : `${phase.intensityTss}%`);
       } else if (phase.type === 'recovery' || phase.type === 'cooldown' || phase.type === 'warmup') {
-        intensityText = phase.rpe ? `RPE ${phase.rpe}` : (phase.type === 'warmup' ? 'Z1-Z2' : 'Z1');
+        intensityText = phase.rpe ? `${phase.rpe * 10}%` : (phase.type === 'warmup' ? '50-60%' : '50%');
       }
 
       let stepText = `- ${phase.duration}m ${intensityText}`;
@@ -229,6 +239,10 @@ export async function generateWorkoutsForMacrocycle(macrocycle: Macrocycle, conf
   const targetModality = config.targetModality || 'RPE';
   const includeStrength = config.includeStrength || false;
   
+  const sportsList = config.sports && config.sports.length > 0 ? config.sports : [{ id: 'run', name: 'Course à pied', hours: config.hoursPerWeek || 6 }];
+  const primarySport = sportsList.reduce((prev, current) => (prev.hours > current.hours) ? prev : current);
+
+  
   let globalWeekIdx = 0;
 
   macrocycle.mesocycles.forEach((meso) => {
@@ -419,6 +433,34 @@ export async function generateWorkoutsForMacrocycle(macrocycle: Macrocycle, conf
           phases.push({ type: 'cooldown', duration: 15, intensityTss: 40, description: "Retour au calme", rpe: 2 });
         }
 
+        // Déterminer le sport
+        let sportName = primarySport.name;
+        let sportType: any = 'Run'; // par défaut
+        
+        if (type === 'Strength' || (includeStrength && type === 'Recovery' && sportsList.some(s => s.name.toLowerCase().includes('renfo')))) {
+           sportName = sportsList.find(s => s.name.toLowerCase().includes('renfo'))?.name || 'Renforcement';
+           sportType = 'WeightTraining';
+           type = 'Strength';
+        } else if (type === 'Recovery' || (type === 'Endurance' && idx !== longRunSessionIdx)) {
+           // Essayer d'assigner un sport croisé (ex: Vélo) pour la récup / endurance de base
+           const crossSport = sportsList.find(s => s.id !== primarySport.id && !s.name.toLowerCase().includes('renfo'));
+           if (crossSport && Math.random() > 0.3) {
+             sportName = crossSport.name;
+             if (crossSport.name.toLowerCase().includes('vélo') || crossSport.name.toLowerCase().includes('ride') || crossSport.name.toLowerCase().includes('bike') || crossSport.name.toLowerCase().includes('cycl')) {
+               sportType = 'Ride';
+             } else {
+               sportType = 'CrossTraining';
+             }
+           }
+        }
+        
+        // Mappage classique du sport primaire si non surchargé
+        if (sportName === primarySport.name) {
+          if (sportName.toLowerCase().includes('vélo') || sportName.toLowerCase().includes('ride') || sportName.toLowerCase().includes('cycl')) sportType = 'Ride';
+          else if (sportName.toLowerCase().includes('course') || sportName.toLowerCase().includes('run') || sportName.toLowerCase().includes('trail')) sportType = 'Run';
+          else sportType = 'CrossTraining';
+        }
+
         workouts.push({
           id: `w-${day.date.getTime()}-${day.offset}`,
           name: `${meso.phase} - ${template?.name || type}${isWeChoc && (idx === numSessions - 1 || idx === numSessions - 2) ? ' (WE CHOC)' : ''}`,
@@ -426,7 +468,7 @@ export async function generateWorkoutsForMacrocycle(macrocycle: Macrocycle, conf
           totalTss: sessionTss,
           estimatedDuration: durationMin,
           type: type,
-          sport: 'Run',
+          sport: sportType,
           terrain: isHill ? 'Technical Trail' : 'Flat',
           description: description,
           phases: phases,

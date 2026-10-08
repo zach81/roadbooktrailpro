@@ -4,12 +4,13 @@ service firebase.storage {
     
     // Fonction utilitaire pour vérifier si l'utilisateur est admin en lisant Firestore
     function isAdmin() {
-      let userRef = firestore.path(/databases/(default)/documents/users/$(request.auth.uid));
-      return firestore.exists(userRef) && firestore.get(userRef).data.role == 'admin';
+      return request.auth != null && 
+             firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // ==========================================
-    // TRACES OFFICIELLES
+    // TRAIL ROADBOOK PRO
     // ==========================================
     match /official_traces/{allPaths=**} {
       // Tout utilisateur connecté peut télécharger une trace officielle
@@ -20,7 +21,14 @@ service firebase.storage {
     }
     
     // ==========================================
-    // AUTRES FICHIERS
+    // PLAN BUILDER
+    // ==========================================
+    match /coaches/{coachId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == coachId;
+    }
+
+    // ==========================================
+    // AUTRES FICHIERS (COMMUN)
     // ==========================================
     match /{allPaths=**} {
       // Les utilisateurs authentifiés peuvent lire et écrire leurs propres fichiers

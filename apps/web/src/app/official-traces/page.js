@@ -80,6 +80,26 @@ export default function OfficialTraces() {
     (race.event && race.event.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  // Group by event and sort by distance
+  const sortedRaces = [...filteredRaces].sort((a, b) => {
+    const eventA = a.event || "Autres courses";
+    const eventB = b.event || "Autres courses";
+    if (eventA < eventB) return -1;
+    if (eventA > eventB) return 1;
+    
+    // Convert distance to number for proper sorting
+    const distA = parseFloat(a.distance) || 0;
+    const distB = parseFloat(b.distance) || 0;
+    return distA - distB;
+  });
+
+  const groupedRaces = sortedRaces.reduce((acc, race) => {
+    const event = race.event || "Autres courses";
+    if (!acc[event]) acc[event] = [];
+    acc[event].push(race);
+    return acc;
+  }, {});
+
   if (authLoading || loading) return <div className={styles.loader}>Chargement...</div>;
 
   return (
@@ -100,48 +120,54 @@ export default function OfficialTraces() {
         />
       </div>
 
-      {filteredRaces.length === 0 ? (
+      {Object.keys(groupedRaces).length === 0 ? (
         <div className={styles.emptyState}>
           <Compass size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
           <h3>Aucune course trouvée</h3>
           <p>Essayez de modifier votre recherche.</p>
         </div>
       ) : (
-        <div className={styles.grid}>
-          {filteredRaces.map((race) => (
-            <div key={race.id} className={styles.card} onClick={() => handleLoadOfficialTrace(race)}>
-              <div className={styles.imagePlaceholder}>
-                {race.event && <span className={styles.eventBadge}>{race.event}</span>}
-                <MapIcon size={48} opacity={0.3} />
-              </div>
-              
-              <div className={styles.cardContent}>
-                <h3>{race.name}</h3>
-                
-                <div className={styles.statsRow}>
-                  <div className={styles.stat}>
-                    <span className={styles.statLabel}>Distance</span>
-                    <span className={styles.statValue}>
-                      <Navigation size={16} /> {race.distance} km
-                    </span>
-                  </div>
-                  <div className={styles.stat}>
-                    <span className={styles.statLabel}>Dénivelé</span>
-                    <span className={styles.statValue} style={{ color: '#27ae60' }}>
-                      <Mountain size={16} /> +{race.elevation}m
-                    </span>
-                  </div>
-                </div>
+        <div className={styles.eventsContainer}>
+          {Object.entries(groupedRaces).map(([eventName, races]) => (
+            <div key={eventName} className={styles.eventGroup}>
+              <h2 className={styles.eventTitle}>{eventName}</h2>
+              <div className={styles.grid}>
+                {races.map((race) => (
+                  <div key={race.id} className={styles.card} onClick={() => handleLoadOfficialTrace(race)}>
+                    <div className={styles.imagePlaceholder}>
+                      <MapIcon size={48} opacity={0.3} />
+                    </div>
+                    
+                    <div className={styles.cardContent}>
+                      <h3>{race.name}</h3>
+                      
+                      <div className={styles.statsRow}>
+                        <div className={styles.stat}>
+                          <span className={styles.statLabel}>Distance</span>
+                          <span className={styles.statValue}>
+                            <Navigation size={16} /> {race.distance} km
+                          </span>
+                        </div>
+                        <div className={styles.stat}>
+                          <span className={styles.statLabel}>Dénivelé</span>
+                          <span className={styles.statValue} style={{ color: '#27ae60' }}>
+                            <Mountain size={16} /> +{race.elevation}m
+                          </span>
+                        </div>
+                      </div>
 
-                <div className={styles.cardFooter}>
-                  <button className={styles.importBtn} disabled={importing}>
-                    {importing ? "Importation..." : (
-                      <>
-                        <ArrowDownToLine size={18} /> Importer et planifier
-                      </>
-                    )}
-                  </button>
-                </div>
+                      <div className={styles.cardFooter}>
+                        <button className={styles.importBtn} disabled={importing}>
+                          {importing ? "Importation..." : (
+                            <>
+                              <ArrowDownToLine size={18} /> Importer et planifier
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}

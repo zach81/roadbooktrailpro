@@ -1,6 +1,17 @@
 import { Workout } from '@/types';
 import { generateIntervalsWorkoutText } from './trainingEngine';
 
+const SPORT_COLORS: Record<string, string> = {
+  'Run': '#FF4500', // Orange-red
+  'Ride': '#1E90FF', // Dodger blue
+  'Swim': '#00CED1', // Dark turquoise
+  'Strength': '#8A2BE2', // Blue violet
+  'Walk': '#32CD32', // Lime green
+  'Yoga': '#FF69B4', // Hot pink
+  'Rowing': '#D2691E', // Chocolate
+  'Other': '#808080' // Gray
+};
+
 /**
  * Uploads a list of workouts to Intervals.icu
  * Requires the user's Intervals.icu Athlete ID and API Key.
@@ -8,7 +19,8 @@ import { generateIntervalsWorkoutText } from './trainingEngine';
 export async function uploadWorkoutsToIntervals(
   athleteId: string,
   apiKey: string,
-  workouts: Workout[]
+  workouts: Workout[],
+  isSimplified: boolean = true
 ) {
   if (!workouts || workouts.length === 0) {
     return [];
@@ -18,11 +30,12 @@ export async function uploadWorkoutsToIntervals(
 
   const payload = workouts.map((workout) => ({
     category: 'WORKOUT',
-    type: 'Run', // Required by Intervals.icu API
+    type: workout.sport || 'Run', // Use actual sport
     start_date_local: workout.date.toISOString().split('T')[0] + 'T00:00:00', // Just dates for now
     name: workout.name,
-    description: generateIntervalsWorkoutText(workout),
+    description: generateIntervalsWorkoutText(workout, isSimplified),
     external_id: workout.id, // Using our internal ID for upserting
+    color: SPORT_COLORS[workout.sport || 'Run'] || SPORT_COLORS['Other']
   }));
 
   const headers = new Headers();
@@ -279,6 +292,101 @@ export async function uploadPhasesToIntervals(
   if (!response.ok) {
     const errorBody = await response.text();
     throw new Error(`Failed to upload phases to Intervals.icu: ${response.status} - ${errorBody}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetches the athlete's events (races, etc.) from Intervals.icu
+ */
+export async function fetchAthleteEvents(athleteId: string, apiKey: string, start?: string, end?: string) {
+  let url = `https://intervals.icu/api/v1/athlete/${athleteId}/events`;
+  
+  const params = new URLSearchParams();
+  if (start) params.append('oldest', start);
+  if (end) params.append('newest', end);
+  if (params.toString()) {
+    url += `?${params.toString()}`;
+  }
+
+  const headers = new Headers();
+  headers.append('Authorization', 'Basic ' + btoa(`API_KEY:${apiKey}`));
+  headers.append('Content-Type', 'application/json');
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch events: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching athlete events:", error);
+    return [];
+  }
+}
+
+
+/**
+ * Uploads weekly targets for load and time to Intervals.icu
+ */
+export async function uploadWeeklyTargetsToIntervals(
+  athleteId: string,
+  apiKey: string,
+  workouts: Workout[]
+) {
+  if (!workouts || workouts.length === 0) return [];
+
+  // Group by week (Monday) and sport
+  const weeklyStats: Record<string, Record<string, { tss: number, seconds: number }>> = {};
+
+  workouts.forEach(w => {
+    const d = new Date(w.date);
+    // Get Monday of that week
+    const day = d.getDay() || 7;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - day + 1);
+    
+    const weekStr = monday.toISOString().split('T')[0];
+    const sport = w.sport || 'Run';
+
+    if (!weeklyStats[weekStr]) weeklyStats[weekStr] = {};
+    if (!weeklyStats[weekStr][sport]) weeklyStats[weekStr][sport] = { tss: 0, seconds: 0 };
+
+    weeklyStats[weekStr][sport].tss += w.totalTss;
+    weeklyStats[weekStr][sport].seconds += (w.estimatedDuration * 60);
+  });
+
+  const payload = [];
+
+  for (const [weekStr, sports] of Object.entries(weeklyStats)) {
+    for (const [sport, stats] of Object.entries(sports)) {
+      payload.push({
+        category: 'TARGET',
+        type: sport,
+        start_date_local: weekStr + 'T00:00:00',
+        load_target: Math.round(stats.tss),
+        time_target: Math.round(stats.seconds),
+        color: SPORT_COLORS[sport] || SPORT_COLORS['Other'],
+        external_id: `planbuilder_target_${sport}_${weekStr}`
+      });
+    }
+  }
+
+  const url = `https://intervals.icu/api/v1/athlete/${athleteId}/events/bulk?upsert=true`;
+  const headers = new Headers();
+  headers.append('Authorization', 'Basic ' + btoa(`API_KEY:${apiKey}`));
+  headers.append('Content-Type', 'application/json');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to upload targets to Intervals.icu: ${response.status} - ${errorBody}`);
   }
 
   return response.json();

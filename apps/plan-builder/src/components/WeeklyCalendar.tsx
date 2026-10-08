@@ -72,7 +72,7 @@ const SortableWorkout = ({ workout, getWorkoutColor, onEdit }: { workout: Workou
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative group bg-white border border-gray-200 rounded-lg shadow-sm p-2 mb-2 hover:border-blue-300 transition-colors ${isDragging ? 'z-50' : 'z-auto'}`}
+      className={`relative group bg-white border border-gray-200 rounded-lg shadow-sm p-2 mb-2 hover:border-orange-300 transition-colors ${isDragging ? 'z-50' : 'z-auto'}`}
     >
       <div 
         className="absolute top-0 left-0 w-1.5 h-full rounded-l-lg" 
@@ -80,7 +80,7 @@ const SortableWorkout = ({ workout, getWorkoutColor, onEdit }: { workout: Workou
       />
       <div className="pl-3">
         <div className="flex justify-between items-start">
-          <h4 className="font-bold text-xs text-slate-800 leading-tight truncate pr-4 cursor-pointer hover:text-blue-600" onClick={(e) => { e.stopPropagation(); onEdit(workout); }}>
+          <h4 className="font-bold text-xs text-slate-800 leading-tight truncate pr-4 cursor-pointer hover:text-orange-600" onClick={(e) => { e.stopPropagation(); onEdit(workout); }}>
             {workout.name}
           </h4>
           <div 
@@ -275,7 +275,7 @@ export default function WeeklyCalendar({
                   <div className="flex items-center gap-2">
                     <span className="text-gray-500">Charge Semaine:</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                      week.actualTss < week.targetTss * 0.9 ? 'bg-blue-100 text-blue-700' :
+                      week.actualTss < week.targetTss * 0.9 ? 'bg-orange-100 text-orange-700' :
                       week.actualTss > week.targetTss * 1.1 ? 'bg-red-100 text-red-700' :
                       'bg-green-100 text-green-700'
                     }`}>
@@ -336,12 +336,12 @@ const DroppableDay = ({
     <div 
       ref={setNodeRef}
       className={`p-2 border-r border-b md:border-b-0 border-gray-100 last:border-r-0 min-h-[120px] flex flex-col transition-colors ${
-        isOver ? 'bg-blue-50/50 ring-2 ring-inset ring-blue-300' : 
-        isToday ? 'bg-indigo-50/20' : 'bg-white'
+        isOver ? 'bg-orange-50/50 ring-2 ring-inset ring-orange-300' : 
+        isToday ? 'bg-emerald-50/20' : 'bg-white'
       }`}
     >
       <div className="flex justify-between items-start mb-2">
-        <span className={`text-xs font-semibold ${isToday ? 'bg-indigo-600 text-white px-1.5 py-0.5 rounded' : 'text-gray-400'}`}>
+        <span className={`text-xs font-semibold ${isToday ? 'bg-emerald-600 text-white px-1.5 py-0.5 rounded' : 'text-gray-400'}`}>
           {day.date.getDate()} {day.date.toLocaleDateString('fr-FR', { month: 'short' })}
         </span>
         {day.dayTss > 0 && (
@@ -367,7 +367,7 @@ const DroppableDay = ({
 
       <button 
         onClick={onAddWorkout}
-        className="mt-2 w-full py-1.5 flex items-center justify-center gap-1 text-xs font-semibold text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+        className="mt-2 w-full py-1.5 flex items-center justify-center gap-1 text-xs font-semibold text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
       >
         <Plus size={14} /> Ajouter
       </button>

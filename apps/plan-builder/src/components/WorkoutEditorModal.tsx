@@ -13,19 +13,19 @@ interface WorkoutEditorModalProps {
 
 const getZoneColor = (zone?: string) => {
   switch (zone) {
-    case 'Z1': return '#3b82f6'; // blue-500
+    case 'Z1': return '#f97316'; // orange-500
     case 'Z2': return '#10b981'; // emerald-500
     case 'Z3': return '#f59e0b'; // amber-500
     case 'Z4': return '#f97316'; // orange-500
     case 'Z5': return '#ef4444'; // red-500
-    case 'Z6': return '#8b5cf6'; // violet-500
+    case 'Z6': return '#10b981'; // violet-500
     default: return '#94a3b8';   // slate-400
   }
 };
 
 const getZoneBgClass = (zone?: string) => {
   switch (zone) {
-    case 'Z1': return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'Z1': return 'bg-orange-100 text-orange-800 border-orange-200';
     case 'Z2': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
     case 'Z3': return 'bg-amber-100 text-amber-800 border-amber-200';
     case 'Z4': return 'bg-orange-100 text-orange-800 border-orange-200';
@@ -172,13 +172,13 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
         {/* Header */}
         <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-slate-50/80 rounded-t-3xl backdrop-blur">
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-800 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Éditeur de Séance Pro</h2>
+            <h2 className="text-2xl font-extrabold text-slate-800 bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-emerald-600">Éditeur de Séance Pro</h2>
             <p className="text-sm text-gray-500 font-medium mt-1">
               {new Date(edited.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => onOpenLibrary(edited.type)} className="px-4 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-xl font-semibold flex items-center gap-2 transition shadow-sm">
+            <button onClick={() => onOpenLibrary(edited.type)} className="px-4 py-2 bg-white border border-orange-200 text-orange-700 hover:bg-orange-50 rounded-xl font-semibold flex items-center gap-2 transition shadow-sm">
               <Library size={18} /> Bibliothèque
             </button>
             <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-xl transition">
@@ -196,7 +196,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                  <Activity size={16} className="text-blue-500" /> Profil de l'entraînement
+                  <Activity size={16} className="text-orange-500" /> Profil de l'entraînement
                 </h3>
                 <div className="flex gap-3 text-sm font-semibold text-slate-600">
                   <span className="flex items-center gap-1"><Timer size={14}/> {edited.estimatedDuration}m</span>
@@ -231,7 +231,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nom de la séance</label>
-                <input type="text" value={edited.name} onChange={(e) => handleGlobalChange('name', e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition font-semibold text-slate-800" />
+                <input type="text" value={edited.name} onChange={(e) => handleGlobalChange('name', e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 outline-none transition font-semibold text-slate-800" />
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -260,7 +260,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Consignes globales</label>
-                <textarea value={edited.description || ''} onChange={(e) => handleGlobalChange('description', e.target.value)} rows={4} className="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:border-blue-500 outline-none resize-none text-sm text-slate-700" placeholder="Objectif principal, matériel requis..."></textarea>
+                <textarea value={edited.description || ''} onChange={(e) => handleGlobalChange('description', e.target.value)} rows={4} className="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none resize-none text-sm text-slate-700" placeholder="Objectif principal, matériel requis..."></textarea>
               </div>
             </div>
           </div>
@@ -274,7 +274,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
               
               {/* Quick Presets */}
               <div className="flex gap-2">
-                <button onClick={() => addPhase({ type: 'warmup', duration: 15, intensityTss: 50 })} className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold transition">
+                <button onClick={() => addPhase({ type: 'warmup', duration: 15, intensityTss: 50 })} className="px-3 py-1.5 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg text-xs font-bold transition">
                   + Échauffement
                 </button>
                 <button onClick={() => addPhase({ type: 'intervals', repeats: 5, workDuration: 3, workIntensity: 110, workZone: 'Z5', restDuration: 1.5, restIntensity: 50, restZone: 'Z1' })} className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg text-xs font-bold transition">
@@ -289,7 +289,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar pb-12">
               {edited.phases.length === 0 ? (
                 <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-10 flex flex-col items-center justify-center text-center">
-                  <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center text-blue-500 mb-4">
+                  <div className="bg-orange-50 w-16 h-16 rounded-full flex items-center justify-center text-orange-500 mb-4">
                     <Plus size={32} />
                   </div>
                   <h4 className="font-bold text-slate-700 text-lg mb-2">Aucun bloc</h4>
@@ -369,10 +369,10 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                             </div>
 
                             {/* Fractionné - Ligne Repos */}
-                            <div className="col-span-12 bg-blue-50/50 p-3 rounded-xl border border-blue-100/50">
+                            <div className="col-span-12 bg-orange-50/50 p-3 rounded-xl border border-orange-100/50">
                               <div className="flex items-center gap-2 mb-2">
-                                <ArrowRight size={14} className="text-blue-500" />
-                                <span className="text-xs font-bold text-blue-800 uppercase tracking-wider">Repos</span>
+                                <ArrowRight size={14} className="text-orange-500" />
+                                <span className="text-xs font-bold text-orange-800 uppercase tracking-wider">Repos</span>
                               </div>
                               <div className="grid grid-cols-3 gap-3">
                                 <div>
@@ -415,7 +415,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                                </div>
                                <div className="flex items-end pb-1">
                                   <label className="flex items-center gap-1.5 cursor-pointer group/chk">
-                                    <input type="checkbox" checked={phase.isHill || false} onChange={(e) => handlePhaseChange(idx, 'isHill', e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                                    <input type="checkbox" checked={phase.isHill || false} onChange={(e) => handlePhaseChange(idx, 'isHill', e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer" />
                                     <span className="text-[10px] font-bold text-slate-500 uppercase group-hover/chk:text-slate-800">En Côte</span>
                                   </label>
                                </div>
@@ -424,7 +424,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                         )}
                         
                         <div className="col-span-12">
-                          <input type="text" value={phase.description || ''} onChange={(e) => handlePhaseChange(idx, 'description', e.target.value)} className="w-full px-3 py-1.5 bg-slate-50 border border-transparent hover:border-gray-200 focus:border-blue-300 focus:bg-white rounded-lg outline-none text-xs italic text-slate-600 placeholder-gray-400 transition" placeholder="Consigne spécifique (ex: En danseuse, focus respiration)..." />
+                          <input type="text" value={phase.description || ''} onChange={(e) => handlePhaseChange(idx, 'description', e.target.value)} className="w-full px-3 py-1.5 bg-slate-50 border border-transparent hover:border-gray-200 focus:border-orange-300 focus:bg-white rounded-lg outline-none text-xs italic text-slate-600 placeholder-gray-400 transition" placeholder="Consigne spécifique (ex: En danseuse, focus respiration)..." />
                         </div>
                       </div>
                     </div>
@@ -433,7 +433,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
               )}
               
               <div className="pt-2">
-                 <button onClick={() => addPhase()} className="w-full py-3 bg-white border-2 border-dashed border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 rounded-xl font-bold flex items-center justify-center gap-2 transition">
+                 <button onClick={() => addPhase()} className="w-full py-3 bg-white border-2 border-dashed border-gray-200 text-gray-500 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50 rounded-xl font-bold flex items-center justify-center gap-2 transition">
                   <Plus size={18} /> Ajouter un bloc manuel
                 </button>
               </div>
@@ -448,7 +448,7 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
           </button>
           <div className="flex gap-3">
             <button onClick={onClose} className="px-6 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Annuler</button>
-            <button onClick={() => onSave(edited)} className="px-8 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/30 transition flex items-center gap-2">
+            <button onClick={() => onSave(edited)} className="px-8 py-2.5 text-sm font-bold text-white bg-orange-600 rounded-xl hover:bg-orange-700 hover:shadow-lg hover:shadow-orange-500/30 transition flex items-center gap-2">
                Appliquer
             </button>
           </div>

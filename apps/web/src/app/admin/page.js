@@ -333,6 +333,8 @@ export default function AdminPage() {
 
 
 
+  const uniqueEvents = Array.from(new Set(traces.map(t => t.event).filter(Boolean))).sort();
+
   if (authLoading || loading) return <div className="loader">Chargement...</div>;
   if (!isAdmin) return null;
 
@@ -365,10 +367,16 @@ export default function AdminPage() {
                   <input 
                     type="text" 
                     required 
+                    list="event-options"
                     value={formData.event}
                     onChange={e => setFormData({...formData, event: e.target.value})}
                     placeholder="Nom de l'événement"
                   />
+                  <datalist id="event-options">
+                    {uniqueEvents.map(evt => (
+                      <option key={evt} value={evt} />
+                    ))}
+                  </datalist>
                 </div>
                 <div className={styles.formGroup}>
                   <label>Nom de la course (ex: CCC)</label>
@@ -474,7 +482,18 @@ export default function AdminPage() {
                   <div className={styles.formRow}>
                     <div className={styles.formGroup}>
                       <label>Événement</label>
-                      <input type="text" className="input-field" value={editFormData.event} onChange={e => setEditFormData({...editFormData, event: e.target.value})} />
+                      <input 
+                        type="text" 
+                        className="input-field" 
+                        list="event-options-edit"
+                        value={editFormData.event} 
+                        onChange={e => setEditFormData({...editFormData, event: e.target.value})} 
+                      />
+                      <datalist id="event-options-edit">
+                        {uniqueEvents.map(evt => (
+                          <option key={evt} value={evt} />
+                        ))}
+                      </datalist>
                     </div>
                     <div className={styles.formGroup}>
                       <label>Nom de la course</label>

@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 import Navigation from "@/components/Navigation";
+import { AuthProvider } from "@/context/AuthContext";
 
 export default function RootLayout({
   children,
@@ -29,14 +30,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap" rel="stylesheet" />
-      </head>
-      <body className="min-h-full flex flex-col bg-[var(--bg-base)]">
-        <Navigation />
-        <main className="container main-content">
-          {children}
-        </main>
+      <body className="min-h-full flex flex-col">
+        <AuthProvider>
+          <Navigation />
+          <div className="flex-1 flex flex-col">{children}</div>
+        </AuthProvider>
       </body>
     </html>
   );

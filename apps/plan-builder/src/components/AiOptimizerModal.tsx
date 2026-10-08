@@ -88,14 +88,14 @@ export default function AiOptimizerModal({ isOpen, onClose, plan, workouts, onWo
     <div className="fixed inset-0 z-[100] flex items-stretch justify-end bg-slate-900/40 backdrop-blur-sm sm:p-4">
       <div className="w-full sm:w-[450px] bg-white sm:rounded-2xl shadow-2xl border border-slate-100 flex flex-col h-full sm:max-h-[calc(100vh-32px)]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-blue-600 to-indigo-600 text-white sm:rounded-t-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-orange-600 to-emerald-600 text-white sm:rounded-t-2xl">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-white/20 rounded-xl backdrop-blur-md">
               <Zap size={20} className="text-yellow-300" />
             </div>
             <div>
               <h3 className="font-bold text-lg leading-tight">Coach IA</h3>
-              <p className="text-xs text-blue-100 font-medium">Expert Trail & Ultra</p>
+              <p className="text-xs text-orange-100 font-medium">Expert Trail & Ultra</p>
             </div>
           </div>
           <button 
@@ -110,12 +110,12 @@ export default function AiOptimizerModal({ isOpen, onClose, plan, workouts, onWo
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 custom-scrollbar">
           {messages.map((msg, index) => (
             <div key={index} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'}`}>
+              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'}`}>
                 {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
               </div>
               <div className={`max-w-[75%] p-3 rounded-2xl text-sm ${
                 msg.role === 'user' 
-                  ? 'bg-blue-600 text-white rounded-tr-sm' 
+                  ? 'bg-orange-600 text-white rounded-tr-sm' 
                   : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm shadow-sm'
               }`}>
                 {msg.role === 'user' ? (
@@ -130,11 +130,11 @@ export default function AiOptimizerModal({ isOpen, onClose, plan, workouts, onWo
           ))}
           {isLoading && (
             <div className="flex gap-3">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
                 <Bot size={16} />
               </div>
               <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-2 text-gray-500">
-                <Loader2 size={16} className="animate-spin text-indigo-500" />
+                <Loader2 size={16} className="animate-spin text-emerald-500" />
                 <span className="text-sm font-medium">Analyse en cours...</span>
               </div>
             </div>
@@ -154,12 +154,12 @@ export default function AiOptimizerModal({ isOpen, onClose, plan, workouts, onWo
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ex: Réduis le volume de la S2..."
               disabled={isLoading}
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition text-sm disabled:opacity-50"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition text-sm disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="p-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white rounded-xl shadow-sm transition flex items-center justify-center shrink-0"
+              className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white rounded-xl shadow-sm transition flex items-center justify-center shrink-0"
             >
               <Send size={18} />
             </button>

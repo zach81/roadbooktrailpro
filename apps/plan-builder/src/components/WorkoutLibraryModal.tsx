@@ -56,9 +56,9 @@ const WorkoutLibraryModal: React.FC<WorkoutLibraryModalProps> = ({
       case 'Tempo': 
       case 'Threshold': return '#f59e0b';
       case 'Endurance': 
-      case 'Long Run': return '#3b82f6';
+      case 'Long Run': return '#f97316';
       case 'Recovery': return '#10b981';
-      case 'Strength': return '#8b5cf6';
+      case 'Strength': return '#10b981';
       default: return '#9ca3af';
     }
   };
@@ -84,7 +84,7 @@ const WorkoutLibraryModal: React.FC<WorkoutLibraryModalProps> = ({
               placeholder="Rechercher une séance..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition text-sm"
             />
           </div>
           <select 
@@ -106,7 +106,7 @@ const WorkoutLibraryModal: React.FC<WorkoutLibraryModalProps> = ({
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50 custom-scrollbar">
           {loading ? (
             <div className="flex justify-center py-12">
-              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : filteredTemplates.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
@@ -118,7 +118,7 @@ const WorkoutLibraryModal: React.FC<WorkoutLibraryModalProps> = ({
               {filteredTemplates.map(t => (
                 <div 
                   key={t.id} 
-                  className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-300 cursor-pointer transition flex flex-col justify-between"
+                  className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-orange-300 cursor-pointer transition flex flex-col justify-between"
                   onClick={() => onSelect(t)}
                 >
                   <div>
@@ -133,7 +133,7 @@ const WorkoutLibraryModal: React.FC<WorkoutLibraryModalProps> = ({
                     </div>
                   </div>
                   <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
-                    <button className="text-sm font-bold text-blue-600 flex items-center gap-1 hover:text-blue-700">
+                    <button className="text-sm font-bold text-orange-600 flex items-center gap-1 hover:text-orange-700">
                       <CheckCircle2 size={16} /> Sélectionner
                     </button>
                   </div>

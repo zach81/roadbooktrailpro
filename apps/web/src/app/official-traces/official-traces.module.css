@@ -176,3 +176,23 @@
   border-radius: 16px;
   color: var(--text-secondary);
 }
+
+.eventsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.eventGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eventTitle {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-light);
+  padding-bottom: 12px;
+  margin: 0;
+}

@@ -102,6 +102,7 @@ export interface Race {
   priority: RacePriority;
   isTarget: boolean; // Is it the main race where the plan ends?
   daysAway?: number; // Calculated dynamically
+  distance?: number; // Distance de la course (km)
 }
 
 export type TargetType = 'Charge' | 'Durée' | 'Distance';

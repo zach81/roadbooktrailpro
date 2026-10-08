@@ -5,12 +5,13 @@ service cloud.firestore {
     // Fonction utilitaire pour vérifier si l'utilisateur est admin
     function isAdmin() {
       let userRef = /databases/$(database)/documents/users/$(request.auth.uid);
-      return exists(userRef) && get(userRef).data.role == 'admin';
+      return exists(userRef) && get(userRef).data.get('role', '') == 'admin';
     }
     
     // ==========================================
-    // 1. COLLECTION USERS
+    // TRAIL ROADBOOK PRO
     // ==========================================
+    
     match /users/{userId} {
       // Tout utilisateur connecté peut chercher un utilisateur (par exemple, par email pour partager un roadbook)
       allow read: if request.auth != null;
@@ -19,9 +20,6 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // ==========================================
-    // 2. COLLECTION ROADBOOKS
-    // ==========================================
     match /roadbooks/{roadbookId} {
       // Lecture : l'utilisateur doit être connecté
       allow read: if request.auth != null;
@@ -36,9 +34,6 @@ service cloud.firestore {
       );
     }
 
-    // ==========================================
-    // 3. COLLECTION OFFICIAL TRACES
-    // ==========================================
     match /official_traces/{traceId} {
       // Tout utilisateur connecté peut lire les traces officielles
       allow read: if request.auth != null;
@@ -47,9 +42,6 @@ service cloud.firestore {
       allow write: if request.auth != null && isAdmin();
     }
 
-    // ==========================================
-    // 4. COLLECTION NUTRITION PRODUCTS
-    // ==========================================
     match /nutrition_products/{productId} {
       // Tout utilisateur connecté peut lire les produits nutrition
       allow read: if request.auth != null;
@@ -65,6 +57,34 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId || 
         isAdmin()
       );
+    }
+    
+    // ==========================================
+    // PLAN BUILDER
+    // ==========================================
+    
+    // Bibliothèque globale de modèles de séances
+    match /workout_templates/{templateId} {
+      allow read: if request.auth != null;
+      // Optionnel : allow write: if isAdmin();
+    }
+
+    match /coaches/{coachId} {
+      // Accès au document du coach
+      allow read, write: if request.auth != null && request.auth.uid == coachId;
+      
+      // Accès aux sous-collections (athlètes, plans, templates)
+      match /athletes/{athleteId} {
+        allow read, write: if request.auth != null && request.auth.uid == coachId;
+        
+        match /plans/{planId} {
+          allow read, write: if request.auth != null && request.auth.uid == coachId;
+        }
+      }
+      
+      match /templates/{templateId} {
+        allow read, write: if request.auth != null && request.auth.uid == coachId;
+      }
     }
   }
 }
