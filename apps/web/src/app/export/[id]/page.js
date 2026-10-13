@@ -6,9 +6,10 @@ import { useRouter, useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import Link from "next/link";
-import { ArrowLeft, Map, Clock, Navigation, Droplets, Activity, Package, Utensils, Loader2, Settings } from "lucide-react";
+import { ArrowLeft, Map, Clock, Navigation, Droplets, Activity, Package, Utensils, Loader2, Settings, Download, Watch, ExternalLink, Check, Copy, AlertCircle, Info } from "lucide-react";
 import styles from "./export.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, calculateTraceStats, findOptimalElevationThreshold } from "@/lib/roadbookCalculator";
+import { buildGPXString, downloadGPXFile, buildTCXString, downloadTCXFile } from "@/lib/gpxBuilder";
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
 import dynamic from 'next/dynamic';
 
@@ -59,6 +60,16 @@ export default function RoadbookSummary() {
     segmentProfileTimes: true,
     nutrition: true
   });
+
+  const [suuntoLoading, setSuuntoLoading] = useState(false);
+  const [suuntoData, setSuuntoData] = useState(null);
+  const [suuntoPaceType, setSuuntoPaceType] = useState("fast");
+  const [suuntoCopied, setSuuntoCopied] = useState(false);
+  const [suuntoError, setSuuntoError] = useState(null);
+  const [gpxDownloaded, setGpxDownloaded] = useState(false);
+  const [tcxDownloaded, setTcxDownloaded] = useState(false);
+  const [activeWatchGuide, setActiveWatchGuide] = useState("garmin");
+  const [gpxNameFormat, setGpxNameFormat] = useState("both");
 
   useEffect(() => {
     if (!currentUser) {
@@ -157,6 +168,116 @@ export default function RoadbookSummary() {
     }
   };
 
+  const handleDownloadGPX = () => {
+    if (!roadbook) return;
+    try {
+      const pts = JSON.parse(roadbook.points || "[]");
+      const wps = JSON.parse(roadbook.waypoints || "[]");
+      const isFast = suuntoPaceType === "fast" || !!roadbook.targetTime;
+      const gpxString = buildGPXString({
+        name: roadbook.name,
+        points: pts,
+        segments: segments,
+        waypoints: wps,
+        startTime: roadbook.startTime,
+        options: {
+          paceType: isFast ? "fast" : "slow",
+          nameFormat: gpxNameFormat,
+          timestampTrack: true
+        }
+      });
+      downloadGPXFile(roadbook.name, gpxString);
+      setGpxDownloaded(true);
+      setTimeout(() => setGpxDownloaded(false), 3000);
+    } catch (err) {
+      console.error("Erreur téléchargement GPX", err);
+      alert("Erreur lors de la génération du GPX.");
+    }
+  };
+
+  const handleDownloadTCX = () => {
+    if (!roadbook) return;
+    try {
+      const pts = JSON.parse(roadbook.points || "[]");
+      const wps = JSON.parse(roadbook.waypoints || "[]");
+      const isFast = suuntoPaceType === "fast" || !!roadbook.targetTime;
+      const tcxString = buildTCXString({
+        name: roadbook.name,
+        points: pts,
+        segments: segments,
+        waypoints: wps,
+        startTime: roadbook.startTime,
+        options: {
+          paceType: isFast ? "fast" : "slow",
+          nameFormat: gpxNameFormat
+        }
+      });
+      downloadTCXFile(roadbook.name, tcxString);
+      setTcxDownloaded(true);
+      setTimeout(() => setTcxDownloaded(false), 3000);
+    } catch (err) {
+      console.error("Erreur téléchargement TCX", err);
+      alert("Erreur lors de la génération du fichier TCX Garmin.");
+    }
+  };
+
+  const handleGenerateSuunto = async (paceChoice) => {
+    if (!roadbook || segments.length === 0) return;
+    const choice = paceChoice || suuntoPaceType;
+    setSuuntoPaceType(choice);
+    setSuuntoLoading(true);
+    setSuuntoError(null);
+
+    try {
+      const isFast = choice === "fast" || !!roadbook.targetTime;
+      const baseStartMs = roadbook.startTime
+        ? new Date(roadbook.startTime).getTime()
+        : (new Date(segments[0].arr_fast).getTime() - segments[0].durationFastMs);
+
+      const checkpoints = segments.map((seg, i) => {
+        const arrIso = isFast ? seg.arr_fast : seg.arr_slow;
+        const arrMs = new Date(arrIso).getTime();
+        const targetElapsedMin = Math.max(1, Math.round((arrMs - baseStartMs) / 60000));
+
+        return {
+          name: seg.to.name,
+          km: Number(seg.cumulDistance.toFixed(2)),
+          targetElapsedMin,
+          notes: seg.to.cutoffTime ? `BH: ${seg.to.cutoffTime}` : undefined,
+          stopMin: seg.to.pause ? Math.round(seg.to.pause) : undefined
+        };
+      });
+
+      const res = await fetch("/api/suunto-export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          raceName: roadbook.name,
+          checkpoints
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Échec de l'export Suunto");
+      }
+
+      setSuuntoData(data);
+    } catch (err) {
+      console.error("Erreur lors de la génération Suunto:", err);
+      setSuuntoError(err.message || "Erreur de connexion au service Parat.io");
+    } finally {
+      setSuuntoLoading(false);
+    }
+  };
+
+  const handleCopySuuntoCode = () => {
+    if (!suuntoData?.code) return;
+    navigator.clipboard.writeText(suuntoData.code);
+    setSuuntoCopied(true);
+    setTimeout(() => setSuuntoCopied(false), 2500);
+  };
+
   if (loading) {
     return <div className={styles.container} style={{textAlign: 'center', paddingTop: '4rem'}}><Loader2 className="lucide-spin" size={32} /> Chargement du roadbook...</div>;
   }
@@ -206,7 +327,23 @@ export default function RoadbookSummary() {
           <Link href={`/editor/${id}`} className="btn btn-secondary">
             <ArrowLeft size={16} /> Retour à l'éditeur
           </Link>
-          <button className="btn btn-primary" onClick={() => window.print()}>
+          <button 
+            type="button"
+            className="btn btn-secondary" 
+            onClick={handleDownloadGPX}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            {gpxDownloaded ? <Check size={16} color="#10B981" /> : <Download size={16} />}
+            {gpxDownloaded ? "GPX Téléchargé !" : "Télécharger GPX"}
+          </button>
+          <a 
+            href="#suunto-section" 
+            className="btn btn-primary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ea580c', borderColor: '#ea580c', textDecoration: 'none' }}
+          >
+            <Watch size={16} /> Export Suunto
+          </a>
+          <button className="btn btn-secondary" onClick={() => window.print()}>
             Imprimer
           </button>
         </div>
@@ -245,6 +382,369 @@ export default function RoadbookSummary() {
           </span>
         </div>
       </div>
+
+      {/* SECTION EXPORT GPS & SUUNTO (PARAT.IO MCP) */}
+      <section id="suunto-section" className={`${styles.exportSection} no-print`}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '2px solid var(--primary-light)', paddingBottom: '10px', marginBottom: '16px' }}>
+          <div>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Watch size={24} color="#ea580c" /> Export Montres GPS (Garmin, Coros, Suunto)
+            </h2>
+            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Exportez vos allures, checkpoints et temps de passage vers votre montre de trail préférée.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span className={styles.gpxBrandBadge}>GPX 1.1</span>
+            <span className={styles.garminBrandBadge}>Garmin TCX</span>
+            <span className={styles.suuntoBrandBadge}>SuuntoPlus™</span>
+          </div>
+        </div>
+
+        {/* Paramétrage commun de l'affichage des temps */}
+        <div style={{ background: 'var(--bg-main, #f8fafc)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '12px 16px', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+            <div style={{ flex: '1 1 300px' }}>
+              <label style={{ display: 'block', fontWeight: 600, marginBottom: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Format d'affichage des temps dans les noms de points :
+              </label>
+              <select
+                value={gpxNameFormat}
+                onChange={(e) => setGpxNameFormat(e.target.value)}
+                style={{ width: '100%', maxWidth: '420px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+              >
+                <option value="both">Chrono cumulé & Heure (ex: Ravito 1 · 2h15 (08h15)) [Recommandé]</option>
+                <option value="elapsed">Chrono de course seul (ex: Ravito 1 · 2h15)</option>
+                <option value="clock">Heure estimée seule (ex: Ravito 1 · 08h15)</option>
+                <option value="raw">Nom simple sans chrono (ex: Ravito 1)</option>
+              </select>
+            </div>
+            
+            {!roadbook.targetTime && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Allure de référence :</span>
+                <button 
+                  type="button"
+                  onClick={() => setSuuntoPaceType("fast")}
+                  className={suuntoPaceType === "fast" ? "btn btn-primary" : "btn btn-secondary"}
+                  style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                >
+                  Rapide / Cible
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSuuntoPaceType("slow")}
+                  className={suuntoPaceType === "slow" ? "btn btn-primary" : "btn btn-secondary"}
+                  style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                >
+                  Lente
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Grille des 3 modes d'export */}
+        <div className={styles.exportGrid}>
+          {/* Carte 1 : GPX Universel Enrichi (Coros, Suunto, etc.) */}
+          <div className={styles.exportCard} style={{ borderColor: 'rgba(2, 132, 199, 0.4)' }}>
+            <div>
+              <div className={styles.exportCardHeader}>
+                <h3 className={styles.exportCardTitle}>
+                  <Download size={20} color="#0284c7" /> Tracé GPX Enrichi
+                </h3>
+                <span className={styles.gpxBrandBadge}>Coros & Multi-marques</span>
+              </div>
+              <p className={styles.cardDescription}>
+                Fichier GPX standard avec waypoints nommés avec vos temps prévus (<code>Ravito · 2h15</code>) et trace horodatée pour les montres <strong>Coros</strong>, <strong>Suunto</strong>, <strong>Garmin</strong> ou applications tierces.
+              </p>
+
+              {/* Aperçu des points injectés */}
+              <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', marginBottom: '16px' }}>
+                <div style={{ fontWeight: 600, marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                  Aperçu des checkpoints injectés :
+                </div>
+                <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {segments.map((s, idx) => {
+                    const isFast = suuntoPaceType === "fast" || !!roadbook.targetTime;
+                    const arrIso = isFast ? s.arr_fast : s.arr_slow;
+                    const baseMs = roadbook.startTime ? new Date(roadbook.startTime).getTime() : (new Date(segments[0].arr_fast).getTime() - segments[0].durationFastMs);
+                    const elapsed = Math.max(0, new Date(arrIso).getTime() - baseMs);
+                    return (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                        <span>📍 {s.to.name} <small style={{ color: 'var(--text-secondary)' }}>({s.cumulDistance.toFixed(1)} km)</small></span>
+                        <strong style={{ color: '#0284c7' }}>{formatDurationMs(elapsed)} ({formatTime(arrIso)})</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div>
+              <button 
+                type="button"
+                onClick={handleDownloadGPX}
+                className="btn btn-secondary"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                {gpxDownloaded ? <Check size={18} color="#10B981" /> : <Download size={18} />}
+                {gpxDownloaded ? "Fichier GPX téléchargé !" : "Télécharger GPX Universel (.gpx)"}
+              </button>
+            </div>
+          </div>
+
+          {/* Carte 2 : Garmin Course TCX */}
+          <div className={styles.exportCard} style={{ borderColor: 'rgba(0, 122, 194, 0.4)' }}>
+            <div>
+              <div className={styles.exportCardHeader}>
+                <h3 className={styles.exportCardTitle}>
+                  <Watch size={20} color="#007ac2" /> Garmin Course (TCX)
+                </h3>
+                <span className={styles.garminBrandBadge}>Garmin Connect</span>
+              </div>
+              <p className={styles.cardDescription}>
+                Format Garmin TCX Course officiel. Alimente directement l'écran <strong>« Sur mon itinéraire » (Up Ahead)</strong> avec icônes natives (Ravitos, Eau, Sommets) et le <strong>« Partenaire Virtuel »</strong> avec vos allures réalistes.
+              </p>
+
+              {/* Aperçu des points Garmin CoursePoints */}
+              <div style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', marginBottom: '16px' }}>
+                <div style={{ fontWeight: 600, marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                  Points de parcours & Icônes Garmin :
+                </div>
+                <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {segments.map((s, idx) => {
+                    const isFast = suuntoPaceType === "fast" || !!roadbook.targetTime;
+                    const arrIso = isFast ? s.arr_fast : s.arr_slow;
+                    const baseMs = roadbook.startTime ? new Date(roadbook.startTime).getTime() : (new Date(segments[0].arr_fast).getTime() - segments[0].durationFastMs);
+                    const elapsed = Math.max(0, new Date(arrIso).getTime() - baseMs);
+                    const isWater = (s.to.type || '').toLowerCase().includes('water') || s.to.name.toLowerCase().includes('eau');
+                    const isSummit = (s.to.type || '').toLowerCase().includes('summit') || s.to.name.toLowerCase().includes('sommet') || s.to.name.toLowerCase().includes('col');
+                    const iconEmoji = isWater ? '💧 Eau' : (isSummit ? '⛰️ Sommet' : '🍽️ Ravito');
+                    return (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                        <span>{iconEmoji} {s.to.name}</span>
+                        <strong style={{ color: '#007ac2' }}>{formatDurationMs(elapsed)} ({formatTime(arrIso)})</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div>
+              <button 
+                type="button"
+                onClick={handleDownloadTCX}
+                className="btn btn-secondary"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', borderColor: '#007ac2', color: '#007ac2' }}
+              >
+                {tcxDownloaded ? <Check size={18} color="#10B981" /> : <Download size={18} />}
+                {tcxDownloaded ? "Fichier TCX téléchargé !" : "Télécharger TCX Garmin (.tcx)"}
+              </button>
+            </div>
+          </div>
+
+          {/* Carte 3 : Suunto / Parat.io */}
+          <div className={styles.exportCard} style={{ borderColor: 'rgba(234, 88, 12, 0.4)' }}>
+            <div>
+              <div className={styles.exportCardHeader}>
+                <h3 className={styles.exportCardTitle}>
+                  <Watch size={20} color="#ea580c" /> Suunto Race App
+                </h3>
+                <span className={styles.suuntoBrandBadge}>SuuntoPlus™</span>
+              </div>
+              <p className={styles.cardDescription}>
+                Plan de course synchronisé pour montres Suunto (Race, Vertical, 9 Peak Pro...) via l'application SuuntoPlus <strong>Parat Race</strong> (généré via l'API MCP Parat.io).
+              </p>
+
+              {/* Bouton de génération si pas encore fait */}
+              {!suuntoData && (
+                <button
+                  type="button"
+                  onClick={() => handleGenerateSuunto()}
+                  disabled={suuntoLoading}
+                  className="btn btn-primary"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#ea580c', borderColor: '#ea580c', marginBottom: '12px' }}
+                >
+                  {suuntoLoading ? <Loader2 className="lucide-spin" size={18} /> : <Watch size={18} />}
+                  {suuntoLoading ? "Génération via Parat.io MCP..." : "Générer le code Suunto (P8;...)"}
+                </button>
+              )}
+
+              {suuntoError && (
+                <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '10px' }}>
+                  ⚠️ {suuntoError}
+                </div>
+              )}
+
+              {/* Résultat généré */}
+              {suuntoData && (
+                <>
+                  <div className={styles.codeBoxContainer} style={{ margin: '8px 0 12px' }}>
+                    <div className={styles.codeBoxHeader}>
+                      <span className={styles.codeBoxTitle}>Code SuuntoPlus (P8) :</span>
+                      <button 
+                        type="button"
+                        onClick={handleCopySuuntoCode}
+                        className={styles.copyBtn}
+                      >
+                        {suuntoCopied ? <Check size={14} color="#10B981" /> : <Copy size={14} />}
+                        {suuntoCopied ? "Copié !" : "Copier"}
+                      </button>
+                    </div>
+                    <pre className={styles.codeSnippet}>{suuntoData.code}</pre>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    {suuntoData.plannerUrl && (
+                      <a 
+                        href={suuntoData.plannerUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '4px 10px' }}
+                      >
+                        <ExternalLink size={14} /> Ouvrir Parat.io
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSuunto()}
+                      disabled={suuntoLoading}
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                    >
+                      {suuntoLoading ? <Loader2 className="lucide-spin" size={14} /> : "Actualiser"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* GUIDES PRATIQUES PAR MARQUE (GARMIN / COROS / SUUNTO) */}
+        <div style={{ marginTop: '24px', background: 'var(--bg-main, #f8fafc)', borderRadius: '8px', border: '1px solid var(--border-light)', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+            <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+              📖 Comment utiliser vos temps de pacing sur votre montre :
+            </span>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setActiveWatchGuide("garmin")}
+                className={`${styles.watchTabBtn} ${activeWatchGuide === "garmin" ? styles.watchTabBtnActive : ""}`}
+                style={activeWatchGuide === "garmin" ? { background: '#007ac2', borderColor: '#007ac2' } : {}}
+              >
+                Garmin
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveWatchGuide("coros")}
+                className={`${styles.watchTabBtn} ${activeWatchGuide === "coros" ? styles.watchTabBtnActive : ""}`}
+                style={activeWatchGuide === "coros" ? { background: '#e11d48', borderColor: '#e11d48' } : {}}
+              >
+                Coros
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveWatchGuide("suunto")}
+                className={`${styles.watchTabBtn} ${activeWatchGuide === "suunto" ? styles.watchTabBtnActive : ""}`}
+                style={activeWatchGuide === "suunto" ? { background: '#ea580c', borderColor: '#ea580c' } : {}}
+              >
+                Suunto
+              </button>
+            </div>
+          </div>
+
+          {/* Guide GARMIN */}
+          {activeWatchGuide === "garmin" && (
+            <div className={styles.guideSteps}>
+              <div className={styles.guideStepsTitle} style={{ color: '#007ac2' }}>
+                Configuration Garmin (Fenix, Forerunner, Enduro, Epix) :
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#e0f2fe', color: '#007ac2' }}>1</div>
+                <div className={styles.stepText}>
+                  <strong>Import dans Garmin Connect :</strong> Téléchargez le fichier <strong>TCX</strong> ci-dessus. Rendez-vous sur <strong>connect.garmin.com</strong> &gt; <em>Entraînement et planification</em> &gt; <em>Parcours</em> &gt; <em>Importer</em> (ou ouvrez le fichier depuis votre smartphone dans l'application Garmin Connect).
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#e0f2fe', color: '#007ac2' }}>2</div>
+                <div className={styles.stepText}>
+                  <strong>Écran « Sur mon itinéraire » (Up Ahead) :</strong> Vos ravitaillements apparaissent automatiquement avec leurs icônes dédiées (Ravitaillement, Eau, Sommet) et leurs temps cibles. Pendant la course, votre montre affiche la distance restante et votre heure d'arrivée estimée (ETA) pour chaque point !
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#e0f2fe', color: '#007ac2' }}>3</div>
+                <div className={styles.stepText}>
+                  <strong>Partenaire Virtuel en direct :</strong> Comme notre trace contient les vitesses réalistes tenant compte des montées, descentes et pauses, Garmin active automatiquement le <strong>Partenaire Virtuel</strong>. Vous voyez en temps réel si vous êtes en avance ou en retard (ex: <code>+02:15</code> d'avance) sur votre plan de marche !
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Guide COROS */}
+          {activeWatchGuide === "coros" && (
+            <div className={styles.guideSteps}>
+              <div className={styles.guideStepsTitle} style={{ color: '#e11d48' }}>
+                Configuration Coros (Pace, Apex, Vertix) :
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffe4e6', color: '#e11d48' }}>1</div>
+                <div className={styles.stepText}>
+                  <strong>Import dans l'app Coros :</strong> Téléchargez le fichier <strong>GPX Enrichi</strong> ci-dessus. Ouvrez-le avec l'application mobile <strong>Coros</strong> (ou allez dans l'onglet <em>Exploration</em> &gt; <em>Mes itinéraires</em> &gt; <em>Importer</em>).
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffe4e6', color: '#e11d48' }}>2</div>
+                <div className={styles.stepText}>
+                  <strong>Points de repère (Checkpoints) :</strong> L'application Coros convertit automatiquement tous les waypoints en checkpoints avec leur temps cible (ex: <code>Ravito 1 · 2h15</code>). Enregistrez puis cliquez sur <em>« Synchroniser avec la montre »</em>.
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffe4e6', color: '#e11d48' }}>3</div>
+                <div className={styles.stepText}>
+                  <strong>Sur la montre le jour J :</strong> Lancez votre activité <em>Course Trail</em> &gt; <em>Navigation</em> &gt; Sélectionnez votre itinéraire.
+                  L'écran dédié aux checkpoints affiche la distance et le D+ restant jusqu'au prochain ravitaillement, et votre montre vibre à l'approche du ravito !
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Guide SUUNTO */}
+          {activeWatchGuide === "suunto" && (
+            <div className={styles.guideSteps}>
+              <div className={styles.guideStepsTitle} style={{ color: '#ea580c' }}>
+                Configuration Suunto (Race, Vertical, 9 Peak Pro) :
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffedd5', color: '#ea580c' }}>1</div>
+                <div className={styles.stepText}>
+                  <strong>Trace GPX :</strong> Téléchargez le fichier <strong>GPX</strong> ci-dessus et ouvrez-le avec l'application <strong>Suunto</strong> sur votre smartphone. Activez l'option <em>« Utiliser dans la montre »</em>.
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffedd5', color: '#ea580c' }}>2</div>
+                <div className={styles.stepText}>
+                  <strong>Application SuuntoPlus :</strong> Dans l'application Suunto, ouvrez le <strong>SuuntoPlus™ Store</strong> et ajoutez l'application <strong>Parat Race</strong>.
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffedd5', color: '#ea580c' }}>3</div>
+                <div className={styles.stepText}>
+                  <strong>Code synchronisé :</strong> Cliquez sur <em>« Générer le code Suunto »</em>, copiez le code <code>P8;...</code> et collez-le dans les paramètres de Parat Race dans votre app Suunto.
+                </div>
+              </div>
+              <div className={styles.stepItem}>
+                <div className={styles.stepNumber} style={{ background: '#ffedd5', color: '#ea580c' }}>4</div>
+                <div className={styles.stepText}>
+                  <strong>Le jour J :</strong> Au départ, chargez la trace dans <em>Navigation</em> et sélectionnez <em>Parat Race</em> dans <em>SuuntoPlus</em>.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className={`${styles.printSettings} no-print`} style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '24px' }}>
         <strong>Options d'impression :</strong>
