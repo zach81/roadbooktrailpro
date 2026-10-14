@@ -66,6 +66,8 @@ export default function RoadbookEditor() {
   const [editName, setEditName] = useState("");
   
   const [targetTime, setTargetTime] = useState("");
+  const [targetHours, setTargetHours] = useState("");
+  const [targetMins, setTargetMins] = useState("");
   const [fatiguePercent, setFatiguePercent] = useState(15);
   const [startTime, setStartTime] = useState("");
   const [officialDistance, setOfficialDistance] = useState("");
@@ -158,8 +160,16 @@ export default function RoadbookEditor() {
           setEditName(data.name || "");
           setPoints(JSON.parse(data.points || "[]"));
           
-          if (data.targetTime) setTargetTime(data.targetTime);
-          else if (data.targetFast) setTargetTime(data.targetFast);
+          const initialTarget = data.targetTime || data.targetFast;
+          if (initialTarget) {
+            setTargetTime(initialTarget);
+            const numTarget = parseFloat(initialTarget);
+            if (!isNaN(numTarget)) {
+              setTargetHours(Math.floor(numTarget).toString());
+              const m = Math.round((numTarget % 1) * 60);
+              setTargetMins(m > 0 ? (m < 10 ? `0${m}` : m.toString()) : "00");
+            }
+          }
           if (data.startTime) setStartTime(data.startTime);
           if (data.officialDistance !== undefined) setOfficialDistance(data.officialDistance.toString());
           if (data.officialElevation !== undefined) setOfficialElevation(data.officialElevation.toString());
@@ -267,8 +277,13 @@ export default function RoadbookEditor() {
     try {
       setSaving(true);
       const docRef = doc(db, "roadbooks", id);
+      const sanitized = newWaypoints.map(w => ({
+        ...w,
+        pause: w.pause === '' || isNaN(parseFloat(w.pause)) ? 0 : parseFloat(w.pause),
+        time_modifier: w.time_modifier === '' || isNaN(parseFloat(w.time_modifier)) ? 100 : parseFloat(w.time_modifier)
+      }));
       await updateDoc(docRef, {
-        waypoints: JSON.stringify(newWaypoints),
+        waypoints: JSON.stringify(sanitized),
       });
     } catch (err) {
       console.error("Erreur auto-save", err);
@@ -334,9 +349,14 @@ export default function RoadbookEditor() {
     try {
       if (!silent) setSaving(true);
       const docRef = doc(db, "roadbooks", id);
+      const sanitizedWaypoints = waypoints.map(w => ({
+        ...w,
+        pause: w.pause === '' || isNaN(parseFloat(w.pause)) ? 0 : parseFloat(w.pause),
+        time_modifier: w.time_modifier === '' || isNaN(parseFloat(w.time_modifier)) ? 100 : parseFloat(w.time_modifier)
+      }));
       await updateDoc(docRef, {
         name: editName,
-        waypoints: JSON.stringify(waypoints),
+        waypoints: JSON.stringify(sanitizedWaypoints),
         targetTime: targetTime,
         fatiguePercent: fatiguePercent,
         pacingStrategy: pacingStrategy,
@@ -538,42 +558,99 @@ export default function RoadbookEditor() {
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Objectif Course</label>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input type="number" min="0" className="input-field" placeholder="H" value={targetTime === null || targetTime === '' || isNaN(targetTime) ? "" : Math.floor(targetTime)} onChange={e => {
-                  const h = parseInt(e.target.value);
-                  const m = targetTime === null || targetTime === '' || isNaN(targetTime) ? 0 : Math.round((targetTime % 1) * 60);
-                  setTargetTime(isNaN(h) ? (m ? m/60 : '') : h + m / 60);
-                }} style={{ width: '100%' }} />
+                <input 
+                  type="number" 
+                  min="0" 
+                  className="input-field" 
+                  placeholder="H" 
+                  value={targetHours} 
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    const hVal = e.target.value;
+                    setTargetHours(hVal);
+                    if (hVal === '' && (targetMins === '' || targetMins === '00' || targetMins === '0')) {
+                      setTargetTime('');
+                    } else {
+                      const h = parseInt(hVal) || 0;
+                      const m = parseInt(targetMins) || 0;
+                      setTargetTime(h + m / 60);
+                    }
+                  }} 
+                  style={{ width: '100%' }} 
+                />
                 <span>h</span>
-                <input type="number" min="0" max="59" className="input-field" placeholder="M" value={targetTime === null || targetTime === '' || isNaN(targetTime) ? "" : Math.round((targetTime % 1) * 60)} onChange={e => {
-                  const h = targetTime === null || targetTime === '' || isNaN(targetTime) ? 0 : Math.floor(targetTime);
-                  const m = parseInt(e.target.value);
-                  setTargetTime(isNaN(m) ? (h ? h : '') : h + m / 60);
-                }} style={{ width: '100%' }} />
+                <input 
+                  type="number" 
+                  min="0" 
+                  max="59" 
+                  className="input-field" 
+                  placeholder="M" 
+                  value={targetMins} 
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    const mVal = e.target.value;
+                    setTargetMins(mVal);
+                    if (mVal === '' && targetHours === '') {
+                      setTargetTime('');
+                    } else {
+                      const h = parseInt(targetHours) || 0;
+                      const m = parseInt(mVal) || 0;
+                      setTargetTime(h + m / 60);
+                    }
+                  }} 
+                  onBlur={() => {
+                    if (targetMins !== '') {
+                      const parsed = parseInt(targetMins);
+                      if (!isNaN(parsed)) {
+                        setTargetMins(parsed < 10 ? `0${parsed}` : `${parsed}`);
+                      }
+                    }
+                  }}
+                  style={{ width: '100%' }} 
+                />
                 <span>m</span>
               </div>
             </div>
             
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Cote ITRA / UTMB</label>
-              <input type="number" step="1" className="input-field" placeholder="Ex: 600" value={itraIndex} onChange={e => {
-                const newItra = e.target.value;
-                setItraIndex(newItra);
-                if (newItra && newItra > 0) {
-                  const config = deriveConfigFromITRA(parseFloat(newItra));
-                  setFatiguePercent(config.fatiguePercent);
-                  setDescentThreshold(config.descentThreshold);
-                  setWalkThreshold(config.walkThreshold);
-                  setUpCostDivider(config.upCostDivider);
-                  setDownCostModifier(config.downCostModifier);
-                  setPacingStrategy(config.pacingStrategy);
-                }
-              }} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="1" 
+                className="input-field" 
+                placeholder="Ex: 600" 
+                value={itraIndex} 
+                onFocus={e => e.target.select()}
+                onChange={e => {
+                  const newItra = e.target.value;
+                  setItraIndex(newItra);
+                  if (newItra && newItra > 0) {
+                    const config = deriveConfigFromITRA(parseFloat(newItra));
+                    setFatiguePercent(config.fatiguePercent);
+                    setDescentThreshold(config.descentThreshold);
+                    setWalkThreshold(config.walkThreshold);
+                    setUpCostDivider(config.upCostDivider);
+                    setDownCostModifier(config.downCostModifier);
+                    setPacingStrategy(config.pacingStrategy);
+                  }
+                }} 
+                style={{ width: '100%' }} 
+              />
             </div>
           </div>
 
           <div className={styles.paramGroup}>
             <label className={styles.paramLabel}>Poids du coureur (kg)</label>
-            <input type="number" step="1" className="input-field" placeholder="Ex: 70" value={weight} onChange={e => setWeight(e.target.value)} style={{ width: '100%' }} />
+            <input 
+              type="number" 
+              step="1" 
+              className="input-field" 
+              placeholder="Ex: 70" 
+              value={weight} 
+              onFocus={e => e.target.select()}
+              onChange={e => setWeight(e.target.value)} 
+              style={{ width: '100%' }} 
+            />
           </div>
         </div>
 
@@ -694,12 +771,30 @@ export default function RoadbookEditor() {
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Distance Off. (km)</label>
-              <input type="number" step="0.1" className="input-field" placeholder="Ex: 42.5" value={officialDistance} onChange={e => setOfficialDistance(e.target.value)} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="0.1" 
+                className="input-field" 
+                placeholder="Ex: 42.5" 
+                value={officialDistance} 
+                onFocus={e => e.target.select()}
+                onChange={e => setOfficialDistance(e.target.value)} 
+                style={{ width: '100%' }} 
+              />
             </div>
 
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Dénivelé Pos. (m)</label>
-              <input type="number" step="10" className="input-field" placeholder="Ex: 2500" value={officialElevation} onChange={e => setOfficialElevation(e.target.value)} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="10" 
+                className="input-field" 
+                placeholder="Ex: 2500" 
+                value={officialElevation} 
+                onFocus={e => e.target.select()}
+                onChange={e => setOfficialElevation(e.target.value)} 
+                style={{ width: '100%' }} 
+              />
             </div>
           </div>
         </div>
@@ -711,7 +806,15 @@ export default function RoadbookEditor() {
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Glucides (g/h)</label>
-              <input type="number" step="5" className="input-field" value={carbTarget} onChange={e => setCarbTarget(e.target.value)} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="5" 
+                className="input-field" 
+                value={carbTarget} 
+                onFocus={e => e.target.select()}
+                onChange={e => setCarbTarget(e.target.value)} 
+                style={{ width: '100%' }} 
+              />
               <div style={{fontSize: '0.7rem', color: '#10B981', marginTop: '4px'}}>
                 Conseil : 60-90 g/h
               </div>
@@ -719,7 +822,15 @@ export default function RoadbookEditor() {
 
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Eau (ml/h)</label>
-              <input type="number" step="50" className="input-field" value={waterTarget} onChange={e => setWaterTarget(e.target.value)} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="50" 
+                className="input-field" 
+                value={waterTarget} 
+                onFocus={e => e.target.select()}
+                onChange={e => setWaterTarget(e.target.value)} 
+                style={{ width: '100%' }} 
+              />
               <div style={{fontSize: '0.7rem', color: '#3B82F6', marginTop: '4px'}}>
                 Conseil : {weather === 'froid' ? '400-500' : weather === 'modere' ? '500-600' : weather === 'chaud' ? '600-800' : '800-1000'} ml/h
               </div>
@@ -729,7 +840,15 @@ export default function RoadbookEditor() {
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Sodium (mg/h)</label>
-              <input type="number" step="50" className="input-field" value={sodiumTarget} onChange={e => setSodiumTarget(e.target.value)} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="50" 
+                className="input-field" 
+                value={sodiumTarget} 
+                onFocus={e => e.target.select()}
+                onChange={e => setSodiumTarget(e.target.value)} 
+                style={{ width: '100%' }} 
+              />
               <div style={{fontSize: '0.7rem', color: '#F59E0B', marginTop: '4px'}}>
                 Conseil : {weather === 'froid' ? '300-400' : weather === 'modere' ? '400-500' : weather === 'chaud' ? '500-600' : '600-800'} mg/h
               </div>
@@ -737,7 +856,16 @@ export default function RoadbookEditor() {
 
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
               <label className={styles.paramLabel}>Caféine (ponctuel)</label>
-              <input type="number" step="10" className="input-field" value={caffeineTarget} title="Dose cible par prise (en mg)" onChange={e => setCaffeineTarget(e.target.value)} style={{ width: '100%' }} />
+              <input 
+                type="number" 
+                step="10" 
+                className="input-field" 
+                value={caffeineTarget} 
+                title="Dose cible par prise (en mg)" 
+                onFocus={e => e.target.select()}
+                onChange={e => setCaffeineTarget(e.target.value)} 
+                style={{ width: '100%' }} 
+              />
               <div style={{fontSize: '0.7rem', color: '#8B5CF6', marginTop: '4px'}}>
                 Conseil : {weight ? `~${Math.round(weight * 3)}-${Math.round(weight * 6)}mg max/course` : 'Prise de ~50mg en cas de coup de fatigue'}
               </div>
@@ -930,7 +1058,16 @@ export default function RoadbookEditor() {
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                   <div style={{ flex: '0 0 140px' }}>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '6px' }}>Distance (km)</label>
-                    <input type="number" step="0.1" placeholder="ex: 15.5" value={newWpKm} onChange={e => setNewWpKm(e.target.value)} className="input-field" style={{ width: '100%' }} />
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      placeholder="ex: 15.5" 
+                      value={newWpKm} 
+                      onFocus={e => e.target.select()}
+                      onChange={e => setNewWpKm(e.target.value)} 
+                      className="input-field" 
+                      style={{ width: '100%' }} 
+                    />
                   </div>
                   <div style={{ flex: '1 1 200px' }}>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginBottom: '6px' }}>Nom du lieu (Ravitaillement, Col...)</label>
@@ -1081,10 +1218,17 @@ export default function RoadbookEditor() {
                         <label>Vitesse (%)</label>
                         <input 
                           type="number" 
-                          value={Number.isNaN(seg.to.time_modifier) ? "" : (seg.to.time_modifier || 100)} 
+                          value={seg.to.time_modifier === '' || seg.to.time_modifier === undefined || seg.to.time_modifier === null || Number.isNaN(seg.to.time_modifier) ? "" : seg.to.time_modifier} 
                           min="50" 
                           max="200" 
-                          onChange={e => handleUpdateWaypoint(seg.to.id, { time_modifier: e.target.value === '' ? '' : (parseFloat(e.target.value) || 100) })} 
+                          placeholder="100"
+                          onFocus={e => e.target.select()}
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { time_modifier: e.target.value === '' ? '' : (isNaN(parseFloat(e.target.value)) ? '' : parseFloat(e.target.value)) })} 
+                          onBlur={e => {
+                            if (seg.to.time_modifier === '' || isNaN(parseFloat(seg.to.time_modifier))) {
+                              handleUpdateWaypoint(seg.to.id, { time_modifier: 100 });
+                            }
+                          }}
                         />
                       </div>
                       
@@ -1092,9 +1236,16 @@ export default function RoadbookEditor() {
                         <label>Pause (min)</label>
                         <input 
                           type="number" 
-                          value={Number.isNaN(seg.to.pause) ? "" : (seg.to.pause || 0)} 
+                          value={seg.to.pause === '' || seg.to.pause === undefined || seg.to.pause === null || Number.isNaN(seg.to.pause) ? "" : seg.to.pause} 
                           min="0" 
-                          onChange={e => handleUpdateWaypoint(seg.to.id, { pause: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })} 
+                          placeholder="0"
+                          onFocus={e => e.target.select()}
+                          onChange={e => handleUpdateWaypoint(seg.to.id, { pause: e.target.value === '' ? '' : (isNaN(parseFloat(e.target.value)) ? '' : parseFloat(e.target.value)) })} 
+                          onBlur={e => {
+                            if (seg.to.pause === '' || isNaN(parseFloat(seg.to.pause))) {
+                              handleUpdateWaypoint(seg.to.id, { pause: 0 });
+                            }
+                          }}
                         />
                       </div>
                       

@@ -6,11 +6,13 @@ import { useRouter, useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import Link from "next/link";
-import { ArrowLeft, Map, Clock, Navigation, Droplets, Activity, Package, Utensils, Loader2, Settings, Download, Watch, ExternalLink, Check, Copy, AlertCircle, Info } from "lucide-react";
+import { ArrowLeft, Map, Clock, Navigation, Droplets, Activity, Package, Utensils, Loader2, Settings, Download, Watch, ExternalLink, Check, Copy, AlertCircle, Info, Printer, Share2 } from "lucide-react";
 import styles from "./export.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, calculateTraceStats, findOptimalElevationThreshold } from "@/lib/roadbookCalculator";
 import { buildGPXString, downloadGPXFile, buildTCXString, downloadTCXFile } from "@/lib/gpxBuilder";
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
+import ShareModal from "@/components/ShareModal";
+import PdfExportModal from "@/components/PdfExportModal";
 import dynamic from 'next/dynamic';
 
 const ElevationProfile = dynamic(() => import('@/components/ElevationProfile'), { 
@@ -45,6 +47,11 @@ export default function RoadbookSummary() {
   const router = useRouter();
   const { id } = useParams();
   
+  const [points, setPoints] = useState([]);
+  const [waypoints, setWaypoints] = useState([]);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+
   const [displayConfig, setDisplayConfig] = useState(defaultDisplayConfig);
   const [displayLoaded, setDisplayLoaded] = useState(false);
   
@@ -113,8 +120,11 @@ export default function RoadbookSummary() {
             id: wp.id || `wp-${i}-${Date.now()}`
           }));
           
+          setPoints(pts);
+
           if (pts.length > 0) {
             const enrichedWp = enrichWaypointsWithStartEnd(wps, pts);
+            setWaypoints(enrichedWp);
             
             const rawStats = calculateTraceStats(pts, 7, 1);
             const offDist = parseFloat(data.officialDistance) || 0;
@@ -328,6 +338,22 @@ export default function RoadbookSummary() {
             <ArrowLeft size={16} /> Retour à l'éditeur
           </Link>
           <button 
+            type="button" 
+            className="btn btn-primary"
+            onClick={() => setShowShareModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Share2 size={16} /> Partager
+          </button>
+          <button 
+            type="button" 
+            className="btn btn-primary"
+            onClick={() => setShowPdfModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#0284c7', borderColor: '#0284c7' }}
+          >
+            <Printer size={16} /> Exporter PDF / Imprimer
+          </button>
+          <button 
             type="button"
             className="btn btn-secondary" 
             onClick={handleDownloadGPX}
@@ -338,14 +364,11 @@ export default function RoadbookSummary() {
           </button>
           <a 
             href="#suunto-section" 
-            className="btn btn-primary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ea580c', borderColor: '#ea580c', textDecoration: 'none' }}
+            className="btn btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
           >
-            <Watch size={16} /> Export Suunto
+            <Watch size={16} /> Export Montres
           </a>
-          <button className="btn btn-secondary" onClick={() => window.print()}>
-            Imprimer
-          </button>
         </div>
       </header>
 
@@ -832,7 +855,7 @@ export default function RoadbookSummary() {
             const totalDurationMs = segments.slice(0, i + 1).reduce((acc, s) => acc + s.durationSlowMs, 0);
             return (
             <div key={i} style={{ marginBottom: '40px', pageBreakInside: 'avoid', textAlign: 'center' }}>
-              <div style={{ display: 'inline-block', width: '100%', maxWidth: '750px', textAlign: 'left', padding: '0 10px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'inline-block', width: '100%', maxWidth: '100%', textAlign: 'left', padding: '0 10px', boxSizing: 'border-box' }}>
                 <h3 style={{ fontSize: '1.2rem', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '4px' }}>
                   <span>{seg.from.name} ➔ {seg.to.name}</span>
                   <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>
@@ -922,6 +945,27 @@ export default function RoadbookSummary() {
         </div>
       </section>
       </>
+      )}
+
+      {/* Modals de partage et d'export PDF */}
+      {showShareModal && (
+        <ShareModal
+          roadbook={roadbook}
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          onUpdateRoadbook={(updated) => setRoadbook(updated)}
+        />
+      )}
+
+      {showPdfModal && (
+        <PdfExportModal
+          roadbook={roadbook}
+          segments={segments}
+          points={points}
+          inventory={inventory}
+          isOpen={showPdfModal}
+          onClose={() => setShowPdfModal(false)}
+        />
       )}
 
     </div>

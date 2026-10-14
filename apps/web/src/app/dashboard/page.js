@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { parseGPX, readFileAsText } from "@/lib/gpxService";
-import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Send, Info } from "lucide-react";
+import { Upload, Plus, FileText, Activity, Trash2, Edit2, Check, X, Send, Info, Share2 } from "lucide-react";
+import ShareModal from "@/components/ShareModal";
 
 import styles from "./dashboard.module.css";
 
@@ -19,9 +20,7 @@ export default function Dashboard() {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [showShareModal, setShowShareModal] = useState(false);
-  const [shareRoadbookId, setShareRoadbookId] = useState(null);
-  const [shareEmail, setShareEmail] = useState("");
-  const [sharing, setSharing] = useState(false);
+  const [selectedRoadbookForShare, setSelectedRoadbookForShare] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
@@ -108,55 +107,9 @@ export default function Dashboard() {
     }
   };
 
-  const handleShareStart = (rbId) => {
-    setShareRoadbookId(rbId);
-    setShareEmail("");
+  const handleShareStart = (rb) => {
+    setSelectedRoadbookForShare(rb);
     setShowShareModal(true);
-  };
-
-  const handleShareSubmit = async (e) => {
-    e.preventDefault();
-    if (!shareEmail.trim()) return;
-
-    try {
-      setSharing(true);
-      // Trouver l'utilisateur par email
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", shareEmail.trim().toLowerCase()));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        alert("Aucun utilisateur trouvé avec cet e-mail.");
-        return;
-      }
-
-      const targetUserId = querySnapshot.docs[0].id;
-      
-      if (targetUserId === currentUser.uid) {
-        alert("Vous ne pouvez pas partager un roadbook avec vous-même.");
-        return;
-      }
-
-      // Récupérer le roadbook à dupliquer
-      const rbToShare = roadbooks.find(rb => rb.id === shareRoadbookId);
-      if (!rbToShare) return;
-
-      // Créer une copie
-      const { id, ...dataToCopy } = rbToShare;
-      dataToCopy.userId = targetUserId;
-      dataToCopy.createdAt = new Date();
-      dataToCopy.name = `${dataToCopy.name} (Partagé par ${currentUser.email})`;
-
-      await addDoc(collection(db, "roadbooks"), dataToCopy);
-
-      alert("Roadbook envoyé avec succès !");
-      setShowShareModal(false);
-    } catch (err) {
-      console.error("Erreur lors du partage :", err);
-      alert("Une erreur est survenue lors de l'envoi.");
-    } finally {
-      setSharing(false);
-    }
   };
 
   const handleDelete = async (id) => {
@@ -300,8 +253,8 @@ export default function Dashboard() {
                       <FileText size={20} className={styles.iconPrimary} /> {rb.name}
                     </h3>
                     <div className={styles.cardActions}>
-                      <button className={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleShareStart(rb.id); }} title="Envoyer (Coaching)">
-                        <Send size={16} />
+                      <button className={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleShareStart(rb); }} title="Partager le roadbook">
+                        <Share2 size={16} />
                       </button>
                       <button className={styles.actionBtn} onClick={() => handleRenameStart(rb)} title="Renommer">
                         <Edit2 size={16} />
@@ -341,39 +294,16 @@ export default function Dashboard() {
         </div>
       )}
 
-      {showShareModal && (
-        <div className={styles.modalOverlay} onClick={() => setShowShareModal(false)}>
-          <div className={styles.modalContent} onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', width: '90%', padding: '24px', borderRadius: '12px', background: 'var(--bg-card)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Mode Coaching</h2>
-              <button onClick={() => setShowShareModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                <X size={24} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleShareSubmit}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>E-mail de l'athlète</label>
-                <input 
-                  type="email" 
-                  required
-                  value={shareEmail}
-                  onChange={(e) => setShareEmail(e.target.value)}
-                  placeholder="athlete@email.com"
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }}
-                />
-              </div>
-              <button 
-                type="submit" 
-                className="btn btn-primary" 
-                style={{ width: '100%' }}
-                disabled={sharing}
-              >
-                {sharing ? "Envoi en cours..." : "Envoyer le roadbook"}
-              </button>
-            </form>
-          </div>
-        </div>
+      {showShareModal && selectedRoadbookForShare && (
+        <ShareModal
+          roadbook={selectedRoadbookForShare}
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          onUpdateRoadbook={(updated) => {
+            setRoadbooks(prev => prev.map(r => r.id === updated.id ? updated : r));
+            setSelectedRoadbookForShare(updated);
+          }}
+        />
       )}
     </div>
   );

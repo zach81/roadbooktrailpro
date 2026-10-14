@@ -57,7 +57,7 @@ async function main() {
   try {
     console.log("Calling Gemini...");
     const response = await ai.models.generateContent({
-      model: "gemma-4-31b-it",
+      model: "gemini-3.8-flash",
       contents: "Génère 1 séance de test.",
       config: {
         responseMimeType: "application/json",

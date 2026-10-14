@@ -391,3 +391,207 @@ export async function uploadWeeklyTargetsToIntervals(
 
   return response.json();
 }
+
+/**
+ * Helper to format speed (m/s) into min/km pace
+ */
+function formatPace(metersPerSec: number): string {
+  if (!metersPerSec || metersPerSec <= 0) return '';
+  const secPerKm = 1000 / metersPerSec;
+  const mins = Math.floor(secPerKm / 60);
+  const secs = Math.round(secPerKm % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}/km`;
+}
+
+function getBasicAuth(apiKey: string): string {
+  if (typeof btoa !== 'undefined') {
+    return 'Basic ' + btoa(`API_KEY:${apiKey}`);
+  }
+  return 'Basic ' + Buffer.from(`API_KEY:${apiKey}`).toString('base64');
+}
+
+/**
+ * Fetches recent activities for an athlete from Intervals.icu (summarized for AI)
+ */
+export async function fetchRecentActivities(
+  athleteId: string,
+  apiKey: string,
+  oldest?: string,
+  newest?: string,
+  limit: number = 20
+) {
+  const now = new Date();
+  const defaultNewest = newest || now.toISOString().split('T')[0];
+  const defaultOldest = oldest || new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  const url = `https://intervals.icu/api/v1/athlete/${athleteId}/activities?oldest=${defaultOldest}&newest=${defaultNewest}`;
+  const headers = new Headers();
+  headers.append('Authorization', getBasicAuth(apiKey));
+  headers.append('Content-Type', 'application/json');
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Failed to fetch activities: ${response.status} - ${errText}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    return data
+      .slice(-limit)
+      .map((act: any) => ({
+        id: act.id,
+        name: act.name,
+        type: act.type,
+        date: act.start_date_local ? act.start_date_local.split('T')[0] : '',
+        distanceKm: act.distance ? Number((act.distance / 1000).toFixed(2)) : 0,
+        durationMin: act.moving_time ? Math.round(act.moving_time / 60) : Math.round((act.elapsed_time || 0) / 60),
+        elevationGainM: act.total_elevation_gain ? Math.round(act.total_elevation_gain) : 0,
+        tss: act.icu_tss ?? act.tss ?? 0,
+        avgHr: act.average_heartrate ? Math.round(act.average_heartrate) : null,
+        maxHr: act.max_heartrate ? Math.round(act.max_heartrate) : null,
+        paceMinKm: act.average_speed ? formatPace(act.average_speed) : null,
+        rpe: act.perceived_exertion ?? null,
+        feel: act.feel ?? null,
+        decoupling: act.decoupling !== undefined ? Number(act.decoupling.toFixed(1)) : null,
+        description: act.description ? act.description.slice(0, 150) : null
+      }));
+  } catch (error: any) {
+    console.error("Error in fetchRecentActivities:", error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * Fetches deep details of a specific activity from Intervals.icu
+ */
+export async function fetchActivityDetails(activityId: string, apiKey: string) {
+  const url = `https://intervals.icu/api/v1/activity/${activityId}`;
+  const headers = new Headers();
+  headers.append('Authorization', getBasicAuth(apiKey));
+  headers.append('Content-Type', 'application/json');
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch activity details: ${response.status}`);
+    }
+    const data = await response.json();
+    return {
+      id: data.id,
+      name: data.name,
+      type: data.type,
+      date: data.start_date_local,
+      distanceKm: data.distance ? Number((data.distance / 1000).toFixed(2)) : 0,
+      movingTimeMin: data.moving_time ? Math.round(data.moving_time / 60) : 0,
+      elevationGainM: data.total_elevation_gain ? Math.round(data.total_elevation_gain) : 0,
+      tss: data.icu_tss ?? data.tss ?? 0,
+      avgHr: data.average_heartrate ? Math.round(data.average_heartrate) : null,
+      maxHr: data.max_heartrate ? Math.round(data.max_heartrate) : null,
+      rpe: data.perceived_exertion ?? null,
+      feel: data.feel ?? null,
+      decoupling: data.decoupling ?? null,
+      description: data.description,
+      intervals: (data.icu_intervals || []).slice(0, 20).map((it: any) => ({
+        type: it.type,
+        durationSec: it.duration,
+        distanceM: it.distance,
+        avgHr: it.average_heartrate,
+        paceMinKm: it.average_speed ? formatPace(it.average_speed) : null,
+        intensity: it.intensity
+      }))
+    };
+  } catch (error: any) {
+    console.error("Error in fetchActivityDetails:", error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * Fetches daily wellness and recovery range from Intervals.icu
+ */
+export async function fetchWellnessRange(
+  athleteId: string,
+  apiKey: string,
+  oldest?: string,
+  newest?: string
+) {
+  const now = new Date();
+  const defaultNewest = newest || now.toISOString().split('T')[0];
+  const defaultOldest = oldest || new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  const url = `https://intervals.icu/api/v1/athlete/${athleteId}/wellness?oldest=${defaultOldest}&newest=${defaultNewest}`;
+  const headers = new Headers();
+  headers.append('Authorization', getBasicAuth(apiKey));
+  headers.append('Content-Type', 'application/json');
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch wellness: ${response.status}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    return data.map((w: any) => ({
+      date: w.id,
+      ctl: w.ctl !== undefined ? Math.round(w.ctl) : null,
+      atl: w.atl !== undefined ? Math.round(w.atl) : null,
+      form: (w.ctl !== undefined && w.atl !== undefined) ? Math.round(w.ctl - w.atl) : null,
+      restingHR: w.restingHR ?? null,
+      hrv: w.hrv ?? w.hrvSDNN ?? null,
+      sleepHours: w.sleepSecs ? Number((w.sleepSecs / 3600).toFixed(1)) : null,
+      sleepScore: w.sleepScore ?? null,
+      sleepQuality: w.sleepQuality ?? null,
+      fatigue: w.fatigue ?? null,
+      stress: w.stress ?? null,
+      soreness: w.soreness ?? null,
+      motivation: w.motivation ?? null,
+      mood: w.mood ?? null,
+      injury: w.injury ?? null,
+      readiness: w.readiness ?? null,
+      weight: w.weight ?? null,
+      comments: w.comments ?? null
+    }));
+  } catch (error: any) {
+    console.error("Error in fetchWellnessRange:", error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * Fetches athlete profile and physiological settings from Intervals.icu
+ */
+export async function fetchAthleteFullProfile(athleteId: string, apiKey: string) {
+  const url = `https://intervals.icu/api/v1/athlete/${athleteId}`;
+  const headers = new Headers();
+  headers.append('Authorization', getBasicAuth(apiKey));
+  headers.append('Content-Type', 'application/json');
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch athlete profile: ${response.status}`);
+    }
+    const data = await response.json();
+    return {
+      id: data.id,
+      name: data.name || `${data.firstname || ''} ${data.lastname || ''}`.trim(),
+      sex: data.sex,
+      weightKg: data.icu?.weight || data.weight || null,
+      restingHR: data.icu?.restingHR || data.resting_hr || null,
+      maxHR: data.icu?.maxHR || data.max_hr || null,
+      lthr: data.icu?.lthr || null,
+      ctl: data.icu?.ctl !== undefined ? Math.round(data.icu.ctl) : null,
+      atl: data.icu?.atl !== undefined ? Math.round(data.icu.atl) : null,
+      form: (data.icu?.ctl !== undefined && data.icu?.atl !== undefined) ? Math.round(data.icu.ctl - data.icu.atl) : null,
+      thresholdPace: data.icu?.threshold_pace || data.run_threshold_pace || null,
+      ftp: data.icu?.ftp || data.ftp || null
+    };
+  } catch (error: any) {
+    console.error("Error in fetchAthleteFullProfile:", error);
+    return { error: error.message };
+  }
+}
+

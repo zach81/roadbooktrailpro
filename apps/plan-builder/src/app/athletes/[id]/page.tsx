@@ -11,6 +11,7 @@ import WorkoutLibraryModal from "@/components/WorkoutLibraryModal";
 import AiOptimizerModal from "@/components/AiOptimizerModal";
 import WeeklyCalendar from "@/components/WeeklyCalendar";
 import { useAuth } from "@/context/AuthContext";
+import { getApiUrl } from "@/lib/apiHelper";
 import {
   LineChart,
   Line,
@@ -562,7 +563,7 @@ export default function AthletePlanner() {
     if (config.aiNotes) {
       setIsGeneratingAi(true);
       try {
-        const response = await fetch('/api/generate-workouts', {
+        const response = await fetch(getApiUrl('/api/generate-workouts'), {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
@@ -609,7 +610,7 @@ export default function AthletePlanner() {
     nextStartDate.setDate(nextStartDate.getDate() + 1); // Start next day
 
     try {
-      const response = await fetch('/api/generate-workouts', {
+      const response = await fetch(getApiUrl('/api/generate-workouts'), {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({
@@ -1354,6 +1355,10 @@ export default function AthletePlanner() {
           plan={plan}
           workouts={workouts}
           onWorkoutsUpdated={setWorkouts}
+          athleteId={athleteId}
+          athleteName={athleteStats?.name || "Athlète"}
+          intervalsAthleteId={intervalsAthleteId || athleteId}
+          intervalsApiKey={intervalsApiKey}
         />
       )}
     </div>

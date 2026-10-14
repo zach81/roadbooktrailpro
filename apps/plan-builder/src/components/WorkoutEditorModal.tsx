@@ -338,7 +338,17 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                             <div className="col-span-6 sm:col-span-3">
                               <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Répétitions</label>
                               <div className="flex items-center">
-                                <input type="number" min="1" value={phase.repeats || 1} onChange={(e) => handlePhaseChange(idx, 'repeats', parseInt(e.target.value) || 1)} className="w-full px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg outline-none text-sm font-bold text-center" />
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  value={phase.repeats === undefined || phase.repeats === null || (phase.repeats as any) === '' ? '' : phase.repeats} 
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => handlePhaseChange(idx, 'repeats', e.target.value === '' ? '' : parseInt(e.target.value))} 
+                                  onBlur={() => {
+                                    if (!phase.repeats || Number(phase.repeats) < 1) handlePhaseChange(idx, 'repeats', 1);
+                                  }}
+                                  className="w-full px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg outline-none text-sm font-bold text-center" 
+                                />
                                 <span className="ml-2 text-sm font-bold text-slate-400">x</span>
                               </div>
                             </div>
@@ -352,7 +362,14 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                               <div className="grid grid-cols-3 gap-3">
                                 <div>
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Durée (m)</label>
-                                  <input type="number" step="0.5" value={phase.workDuration || ''} onChange={(e) => handlePhaseChange(idx, 'workDuration', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" />
+                                  <input 
+                                    type="number" 
+                                    step="0.5" 
+                                    value={phase.workDuration === undefined || phase.workDuration === null || (phase.workDuration as any) === '' ? '' : phase.workDuration} 
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handlePhaseChange(idx, 'workDuration', e.target.value === '' ? '' : parseFloat(e.target.value))} 
+                                    className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" 
+                                  />
                                 </div>
                                 <div>
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Zone</label>
@@ -363,7 +380,13 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                                 </div>
                                 <div>
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">% FTP/VMA</label>
-                                  <input type="number" value={phase.workIntensity || ''} onChange={(e) => handlePhaseChange(idx, 'workIntensity', parseInt(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" />
+                                  <input 
+                                    type="number" 
+                                    value={phase.workIntensity === undefined || phase.workIntensity === null || (phase.workIntensity as any) === '' ? '' : phase.workIntensity} 
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handlePhaseChange(idx, 'workIntensity', e.target.value === '' ? '' : parseInt(e.target.value))} 
+                                    className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" 
+                                  />
                                 </div>
                               </div>
                             </div>
@@ -377,7 +400,14 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                               <div className="grid grid-cols-3 gap-3">
                                 <div>
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Durée (m)</label>
-                                  <input type="number" step="0.5" value={phase.restDuration || ''} onChange={(e) => handlePhaseChange(idx, 'restDuration', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" />
+                                  <input 
+                                    type="number" 
+                                    step="0.5" 
+                                    value={phase.restDuration === undefined || phase.restDuration === null || (phase.restDuration as any) === '' ? '' : phase.restDuration} 
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handlePhaseChange(idx, 'restDuration', e.target.value === '' ? '' : parseFloat(e.target.value))} 
+                                    className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" 
+                                  />
                                 </div>
                                 <div>
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Zone</label>
@@ -387,7 +417,13 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                                 </div>
                                 <div>
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">% FTP/VMA</label>
-                                  <input type="number" value={phase.restIntensity || ''} onChange={(e) => handlePhaseChange(idx, 'restIntensity', parseInt(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" />
+                                  <input 
+                                    type="number" 
+                                    value={phase.restIntensity === undefined || phase.restIntensity === null || (phase.restIntensity as any) === '' ? '' : phase.restIntensity} 
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handlePhaseChange(idx, 'restIntensity', e.target.value === '' ? '' : parseInt(e.target.value))} 
+                                    className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg outline-none text-sm" 
+                                  />
                                 </div>
                               </div>
                             </div>
@@ -396,22 +432,54 @@ const WorkoutEditorModal: React.FC<WorkoutEditorModalProps> = ({
                           <>
                             <div className="col-span-6 sm:col-span-3">
                               <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Durée (m)</label>
-                              <input type="number" step="0.5" value={phase.duration} onChange={(e) => handlePhaseChange(idx, 'duration', parseFloat(e.target.value) || 0)} className="w-full px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg outline-none text-sm font-bold text-center" />
+                              <input 
+                                type="number" 
+                                step="0.5" 
+                                value={phase.duration === undefined || phase.duration === null || (phase.duration as any) === '' ? '' : phase.duration} 
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => handlePhaseChange(idx, 'duration', e.target.value === '' ? '' : parseFloat(e.target.value))} 
+                                onBlur={() => {
+                                  if (!phase.duration || Number(phase.duration) <= 0) handlePhaseChange(idx, 'duration', 10);
+                                }}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg outline-none text-sm font-bold text-center" 
+                              />
                             </div>
                             <div className="col-span-6 sm:col-span-3">
                               <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">% / TSS</label>
-                              <input type="number" value={phase.intensityTss} onChange={(e) => handlePhaseChange(idx, 'intensityTss', parseInt(e.target.value) || 0)} className="w-full px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg outline-none text-sm font-bold text-center" />
+                              <input 
+                                type="number" 
+                                value={phase.intensityTss === undefined || phase.intensityTss === null || (phase.intensityTss as any) === '' ? '' : phase.intensityTss} 
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => handlePhaseChange(idx, 'intensityTss', e.target.value === '' ? '' : parseInt(e.target.value))} 
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg outline-none text-sm font-bold text-center" 
+                              />
                             </div>
                             
                             {/* Advanced Fields for Continuous Blocks */}
                             <div className="col-span-12 grid grid-cols-3 gap-3 mt-1 bg-slate-50 p-2 rounded-lg border border-gray-100">
                                <div>
                                   <label className="block text-[9px] font-bold text-gray-400 uppercase mb-1">RPE (1-10)</label>
-                                  <input type="number" min="1" max="10" placeholder="-" value={phase.rpe || ''} onChange={(e) => handlePhaseChange(idx, 'rpe', parseInt(e.target.value))} className="w-full px-2 py-1 bg-white border border-gray-200 rounded outline-none text-xs" />
+                                  <input 
+                                    type="number" 
+                                    min="1" 
+                                    max="10" 
+                                    placeholder="-" 
+                                    value={phase.rpe === undefined || phase.rpe === null || (phase.rpe as any) === '' ? '' : phase.rpe} 
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handlePhaseChange(idx, 'rpe', e.target.value === '' ? undefined : parseInt(e.target.value))} 
+                                    className="w-full px-2 py-1 bg-white border border-gray-200 rounded outline-none text-xs" 
+                                  />
                                </div>
                                <div>
                                   <label className="block text-[9px] font-bold text-gray-400 uppercase mb-1">Cadence (rpm)</label>
-                                  <input type="number" placeholder="-" value={phase.cadenceTarget || ''} onChange={(e) => handlePhaseChange(idx, 'cadenceTarget', parseInt(e.target.value))} className="w-full px-2 py-1 bg-white border border-gray-200 rounded outline-none text-xs" />
+                                  <input 
+                                    type="number" 
+                                    placeholder="-" 
+                                    value={phase.cadenceTarget === undefined || phase.cadenceTarget === null || (phase.cadenceTarget as any) === '' ? '' : phase.cadenceTarget} 
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handlePhaseChange(idx, 'cadenceTarget', e.target.value === '' ? undefined : parseInt(e.target.value))} 
+                                    className="w-full px-2 py-1 bg-white border border-gray-200 rounded outline-none text-xs" 
+                                  />
                                </div>
                                <div className="flex items-end pb-1">
                                   <label className="flex items-center gap-1.5 cursor-pointer group/chk">

@@ -21,14 +21,14 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
   const [planName, setPlanName] = useState(`Plan ${athleteName}`);
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [hoursPerWeek, setHoursPerWeek] = useState(10);
-  const [initialTss, setInitialTss] = useState(0);
+  const [initialTss, setInitialTss] = useState<number | string>(athleteData?.ctl ? Math.round(athleteData.ctl * 7) : 50);
 
   // Mode and phases
   const [planMode, setPlanMode] = useState<PlanMode>("RACE");
-  const [manualPhases, setManualPhases] = useState({ base: 4, build: 4, peak: 2, taper: 2 });
+  const [manualPhases, setManualPhases] = useState<{ base: number | string, build: number | string, peak: number | string, taper: number | string }>({ base: 4, build: 4, peak: 2, taper: 2 });
 
   // Sports
-  const [sports, setSports] = useState<{ id: string, name: string, hours: number }[]>([
+  const [sports, setSports] = useState<{ id: string, name: string, hours: number | string }[]>([
     { id: "run", name: "Course à pied", hours: 6 },
     { id: "ride", name: "Vélo", hours: 3 },
     { id: "strength", name: "Renforcement", hours: 1 }
@@ -38,13 +38,13 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
   const [races, setRaces] = useState<Race[]>([]);
   const [newRaceName, setNewRaceName] = useState("");
   const [newRaceDate, setNewRaceDate] = useState("");
-  const [newRaceDistance, setNewRaceDistance] = useState(50);
+  const [newRaceDistance, setNewRaceDistance] = useState<number | string>(50);
   const [newRacePriority, setNewRacePriority] = useState<RacePriority>("A");
 
   // Advanced
   const [startWithRecovery, setStartWithRecovery] = useState(false);
-  const [progressionRate, setProgressionRate] = useState(5);
-  const [recoveryFreq, setRecoveryFreq] = useState(4);
+  const [progressionRate, setProgressionRate] = useState<number | string>(5);
+  const [recoveryFreq, setRecoveryFreq] = useState<number | string>(4);
   const [distributionModel, setDistributionModel] = useState<"POLARIZED" | "PYRAMIDAL" | "THRESHOLD">("POLARIZED");
 
   useEffect(() => {
@@ -71,7 +71,8 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
         name: newRaceName,
         date: new Date(newRaceDate),
         priority: newRacePriority,
-        isTarget: newRacePriority === "A"
+        isTarget: newRacePriority === "A",
+        distance: Number(newRaceDistance) || 0
       };
       setRaces([...races, newRace]);
       setNewRaceName("");
@@ -82,21 +83,26 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
   const handleGenerate = () => {
     const config: PlanConfig = {
       planName,
-      hoursPerWeek,
-      sports,
+      hoursPerWeek: sports.reduce((a, b) => a + (Number(b.hours) || 0), 0),
+      sports: sports.map(s => ({ ...s, hours: Number(s.hours) || 1 })),
       targetTypes: { "Charge": true, "Durée": true, "Distance": false },
       startDate,
       startWithRecovery,
       races: races.length > 0 ? races : [{ id: "default", name: "Objectif Principal", date: new Date(new Date(startDate).getTime() + 16 * 7 * 24 * 60 * 60 * 1000), priority: "A", isTarget: true, daysAway: 112 }],
       progression: {
-        mesocycleProgressionRate: progressionRate,
-        intramesocycleProgressionRate: progressionRate / 2,
+        mesocycleProgressionRate: Number(progressionRate) || 5,
+        intramesocycleProgressionRate: (Number(progressionRate) || 5) / 2,
         plateauThreshold: 20,
         recoveryVolumeReduction: 40,
-        recoveryFrequency: recoveryFreq
+        recoveryFrequency: Number(recoveryFreq) || 4
       },
       planMode,
-      manualPhases: planMode === "MANUAL" ? manualPhases : undefined,
+      manualPhases: planMode === "MANUAL" ? {
+        base: Number(manualPhases.base) || 4,
+        build: Number(manualPhases.build) || 4,
+        peak: Number(manualPhases.peak) || 2,
+        taper: Number(manualPhases.taper) || 2
+      } : undefined,
       sessionsPerWeek: 5,
       availableDays: [1, 2, 3, 5, 6, 0],
       longRunDays: [0],
@@ -105,7 +111,7 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
       includeHomeTrainer: false,
       includeStrength: sports.some(s => s.name.includes("Renforcement")),
       weChocFrequency: 0,
-      initialTss
+      initialTss: Number(initialTss) || 50
     };
     onGeneratePlan(config);
     onClose();
@@ -171,7 +177,14 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Charge Hebdo Initiale (TSS)</label>
                     <div className="flex items-center gap-2">
-                      <input type="number" value={initialTss} onChange={e => setInitialTss(Number(e.target.value))} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" />
+                      <input 
+                        type="number" 
+                        value={initialTss} 
+                        onFocus={e => e.target.select()}
+                        onChange={e => setInitialTss(e.target.value === '' ? '' : Number(e.target.value))} 
+                        onBlur={() => { if (initialTss === '' || Number(initialTss) <= 0) setInitialTss(Math.round(athleteData?.ctl ? athleteData.ctl * 7 : 50)); }}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" 
+                      />
                       <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">CTL suggéré: {Math.round(athleteData?.ctl || 0)}</div>
                     </div>
                   </div>
@@ -195,19 +208,19 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-4 gap-4">
                     <div>
                       <label className="text-xs font-semibold text-gray-500">Base (semaines)</label>
-                      <input type="number" value={manualPhases.base} onChange={e => setManualPhases({...manualPhases, base: Number(e.target.value)})} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
+                      <input type="number" value={manualPhases.base} onFocus={e => e.target.select()} onChange={e => setManualPhases({...manualPhases, base: e.target.value === '' ? '' : Number(e.target.value)})} onBlur={() => { if (manualPhases.base === '') setManualPhases(prev => ({...prev, base: 4})); }} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500">Build (semaines)</label>
-                      <input type="number" value={manualPhases.build} onChange={e => setManualPhases({...manualPhases, build: Number(e.target.value)})} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
+                      <input type="number" value={manualPhases.build} onFocus={e => e.target.select()} onChange={e => setManualPhases({...manualPhases, build: e.target.value === '' ? '' : Number(e.target.value)})} onBlur={() => { if (manualPhases.build === '') setManualPhases(prev => ({...prev, build: 4})); }} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500">Peak (semaines)</label>
-                      <input type="number" value={manualPhases.peak} onChange={e => setManualPhases({...manualPhases, peak: Number(e.target.value)})} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
+                      <input type="number" value={manualPhases.peak} onFocus={e => e.target.select()} onChange={e => setManualPhases({...manualPhases, peak: e.target.value === '' ? '' : Number(e.target.value)})} onBlur={() => { if (manualPhases.peak === '') setManualPhases(prev => ({...prev, peak: 2})); }} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500">Taper (semaines)</label>
-                      <input type="number" value={manualPhases.taper} onChange={e => setManualPhases({...manualPhases, taper: Number(e.target.value)})} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
+                      <input type="number" value={manualPhases.taper} onFocus={e => e.target.select()} onChange={e => setManualPhases({...manualPhases, taper: e.target.value === '' ? '' : Number(e.target.value)})} onBlur={() => { if (manualPhases.taper === '') setManualPhases(prev => ({...prev, taper: 2})); }} className="w-full border border-gray-300 rounded-lg px-2 py-1 mt-1" />
                     </div>
                   </div>
                 )}
@@ -221,7 +234,7 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
                     <h3 className="font-bold text-gray-800">Volume cible</h3>
                     <p className="text-sm text-gray-500">Répartition des heures par sport</p>
                   </div>
-                  <div className="text-2xl font-bold text-blue-600">{sports.reduce((a, b) => a + Number(b.hours), 0)}h / sem</div>
+                  <div className="text-2xl font-bold text-blue-600">{sports.reduce((a, b) => a + (Number(b.hours) || 0), 0)}h / sem</div>
                 </div>
 
                 <div className="space-y-3">
@@ -233,11 +246,25 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
                         setSports(newSports);
                       }} className="flex-1 border-none bg-transparent font-medium" />
                       <div className="flex items-center gap-2">
-                        <input type="number" step="0.5" value={sport.hours} onChange={e => {
-                          const newSports = [...sports];
-                          newSports[index].hours = Number(e.target.value);
-                          setSports(newSports);
-                        }} className="w-20 border border-gray-300 rounded px-2 py-1 text-center" />
+                        <input 
+                          type="number" 
+                          step="0.5" 
+                          value={sport.hours} 
+                          onFocus={e => e.target.select()}
+                          onChange={e => {
+                            const newSports = [...sports];
+                            newSports[index].hours = e.target.value === '' ? '' : Number(e.target.value);
+                            setSports(newSports);
+                          }} 
+                          onBlur={() => {
+                            if (sport.hours === '') {
+                              const newSports = [...sports];
+                              newSports[index].hours = 1;
+                              setSports(newSports);
+                            }
+                          }}
+                          className="w-20 border border-gray-300 rounded px-2 py-1 text-center" 
+                        />
                         <span className="text-gray-500">heures</span>
                       </div>
                       <button onClick={() => setSports(sports.filter((_, i) => i !== index))} className="text-red-500 hover:bg-red-50 p-1 rounded">
@@ -273,7 +300,13 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
                   </div>
                   <div className="w-24">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Dist. (km)</label>
-                    <input type="number" value={newRaceDistance} onChange={e => setNewRaceDistance(Number(e.target.value))} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    <input 
+                      type="number" 
+                      value={newRaceDistance} 
+                      onFocus={e => e.target.select()}
+                      onChange={e => setNewRaceDistance(e.target.value === '' ? '' : Number(e.target.value))} 
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Priorité</label>
@@ -322,12 +355,26 @@ export default function PlanModal({ isOpen, onClose, athleteId, athleteName, ath
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Taux de progression (%)</label>
-                    <input type="number" value={progressionRate} onChange={e => setProgressionRate(Number(e.target.value))} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" />
+                    <input 
+                      type="number" 
+                      value={progressionRate} 
+                      onFocus={e => e.target.select()}
+                      onChange={e => setProgressionRate(e.target.value === '' ? '' : Number(e.target.value))} 
+                      onBlur={() => { if (progressionRate === '') setProgressionRate(5); }}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" 
+                    />
                     <p className="text-xs text-gray-500 mt-1">Augmentation TSS/semaine</p>
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Récupération toutes les (semaines)</label>
-                    <input type="number" value={recoveryFreq} onChange={e => setRecoveryFreq(Number(e.target.value))} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" />
+                    <input 
+                      type="number" 
+                      value={recoveryFreq} 
+                      onFocus={e => e.target.select()}
+                      onChange={e => setRecoveryFreq(e.target.value === '' ? '' : Number(e.target.value))} 
+                      onBlur={() => { if (recoveryFreq === '') setRecoveryFreq(4); }}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" 
+                    />
                   </div>
                 </div>
 

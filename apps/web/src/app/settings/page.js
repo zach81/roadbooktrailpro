@@ -245,6 +245,7 @@ export default function SettingsPage() {
                   <input
                     type="number" className={styles.inputField} placeholder="Ex: 600"
                     value={itraIndex}
+                    onFocus={e => e.target.select()}
                     onChange={e => {
                       const newItra = e.target.value;
                       setItraIndex(newItra);
@@ -272,7 +273,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField} placeholder="Ex: 70"
-                    value={weight} onChange={e => setWeight(e.target.value)}
+                    value={weight} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setWeight(e.target.value)}
                   />
                   <span className={styles.inputUnit}>kg</span>
                 </div>
@@ -302,7 +305,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField}
-                    value={fatiguePercent} onChange={e => setFatiguePercent(e.target.value)}
+                    value={fatiguePercent} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setFatiguePercent(e.target.value)}
                   />
                   <span className={styles.inputUnit}>%</span>
                 </div>
@@ -318,7 +323,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField}
-                    value={walkThreshold} onChange={e => setWalkThreshold(e.target.value)}
+                    value={walkThreshold} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setWalkThreshold(e.target.value)}
                   />
                   <span className={styles.inputUnit}>%</span>
                 </div>
@@ -334,7 +341,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField}
-                    value={descentThreshold} onChange={e => setDescentThreshold(e.target.value)}
+                    value={descentThreshold} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setDescentThreshold(e.target.value)}
                   />
                   <span className={styles.inputUnit}>%</span>
                 </div>
@@ -350,7 +359,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField}
-                    value={upCostDivider} onChange={e => setUpCostDivider(e.target.value)}
+                    value={upCostDivider} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setUpCostDivider(e.target.value)}
                   />
                   <span className={styles.inputUnit}>d+</span>
                 </div>
@@ -416,7 +427,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField} placeholder="Ex: 60"
-                    value={carbTarget} onChange={e => setCarbTarget(e.target.value)}
+                    value={carbTarget} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setCarbTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>g / h</span>
                 </div>
@@ -429,7 +442,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField} placeholder="Ex: 500"
-                    value={waterTarget} onChange={e => setWaterTarget(e.target.value)}
+                    value={waterTarget} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setWaterTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>ml / h</span>
                 </div>
@@ -442,7 +457,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField} placeholder="Ex: 400"
-                    value={sodiumTarget} onChange={e => setSodiumTarget(e.target.value)}
+                    value={sodiumTarget} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setSodiumTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>mg / h</span>
                 </div>
@@ -455,7 +472,9 @@ export default function SettingsPage() {
                 <div className={styles.inputWrapper}>
                   <input
                     type="number" className={styles.inputField} placeholder="Ex: 50"
-                    value={caffeineTarget} onChange={e => setCaffeineTarget(e.target.value)}
+                    value={caffeineTarget} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setCaffeineTarget(e.target.value)}
                   />
                   <span className={styles.inputUnit}>mg / h</span>
                 </div>

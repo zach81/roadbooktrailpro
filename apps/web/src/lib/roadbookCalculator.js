@@ -354,7 +354,8 @@ export function generateSegments(
   targetTimeH = null,
   upCostDivider = 80,
   downCostModifier = 1.0,
-  pacingStrategy = 'regular'
+  pacingStrategy = 'regular',
+  paceProfile = 'coach'
 ) {
   if (!points || points.length === 0 || orderedWaypoints.length < 2) return [];
 
@@ -468,8 +469,9 @@ export function generateSegments(
     const terrainFactor = getTerrainFactor(technicalityLevel);
     
     const freshHours = standardKmEffort / flatSpeedKmh;
-    // On applique le terrainFactor ici ! Plus c'est technique, plus le freshMs augmente.
-    const freshMs = freshHours * 3600000 * terrainFactor;
+    const paceProfileFactor = paceProfile === 'aggressive' ? 0.95 : 1.0;
+    // On applique le terrainFactor et le profil d'allure ici !
+    const freshMs = freshHours * 3600000 * terrainFactor * paceProfileFactor;
     
     // Fatigue intégrale sur ce segment
     const baseFatigueFactor = seg.kmEffort > 0 ? (computeFatigueIntegral(currentX, seg.kmEffort, E, F) / seg.kmEffort) : 1;

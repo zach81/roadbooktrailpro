@@ -206,6 +206,10 @@
     border-bottom: 1px solid #ddd;
     color: #000;
   }
+
+  .container canvas {
+    max-width: 100% !important;
+  }
 }
 
 @media (max-width: 768px) {

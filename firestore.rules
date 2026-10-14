@@ -21,8 +21,8 @@ service cloud.firestore {
     }
 
     match /roadbooks/{roadbookId} {
-      // Lecture : l'utilisateur doit être connecté
-      allow read: if request.auth != null;
+      // Lecture : l'utilisateur doit être connecté OU le roadbook est partagé publiquement
+      allow read: if request.auth != null || resource.data.get('isPublic', false) == true || resource.data.get('shared', false) == true;
       
       // Création : l'utilisateur doit être le propriétaire du roadbook qu'il crée
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;

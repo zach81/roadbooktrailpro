@@ -15,6 +15,7 @@ import { BarChart, Bar, Cell, XAxis, Tooltip, ResponsiveContainer } from 'rechar
 import { useAuth } from '@/context/AuthContext';
 import styles from './page.module.css';
 import { RefreshCw, Plus } from 'lucide-react';
+import { getApiUrl } from '@/lib/apiHelper';
 
 const formatDateForInput = (d: Date | string) => {
   try {
@@ -165,12 +166,12 @@ export default function PlanBuilderPage() {
     setIsGenerating(true);
     const config = {
       planName,
-      hoursPerWeek: sports.reduce((acc, s) => acc + s.hours, 0),
-      sports,
+      hoursPerWeek: sports.reduce((acc, s) => acc + (Number(s.hours) || 0), 0),
+      sports: sports.map(s => ({ ...s, hours: Number(s.hours) || 0 })),
       targetTypes,
       startDate,
       startWithRecovery,
-      races,
+      races: races.map(r => ({ ...r, distance: r.distance !== undefined && r.distance !== null && (r.distance as any) !== '' ? Number(r.distance) || 0 : undefined })),
       progression,
       planMode,
       manualPhases,
@@ -194,7 +195,7 @@ export default function PlanBuilderPage() {
       if (useAiForWorkouts) {
         // Appeler l'API IA pour les 4 premières semaines
         try {
-          const response = await fetch('/api/generate-workouts', {
+          const response = await fetch(getApiUrl('/api/generate-workouts'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ macrocycle: newPlan, config, weeksToGenerate: 4 })
@@ -242,7 +243,7 @@ export default function PlanBuilderPage() {
   };
 
   // UI Helpers
-  const totalHours = sports.reduce((acc, s) => acc + s.hours, 0);
+  const totalHours = sports.reduce((acc, s) => acc + (Number(s.hours) || 0), 0);
   const start = new Date(startDate);
   let totalDays = 0, totalWeeks = 0;
   let endDateStr = 'N/A';
@@ -260,9 +261,24 @@ export default function PlanBuilderPage() {
   }
 
   const previewConfig = {
-    planName, hoursPerWeek: totalHours, sports, targetTypes, startDate, startWithRecovery,
-    races, progression, planMode, manualPhases, sessionsPerWeek, availableDays, longRunDays,
-    distributionModel, targetModality, includeHomeTrainer, includeStrength, weChocFrequency,
+    planName,
+    hoursPerWeek: totalHours,
+    sports: sports.map(s => ({ ...s, hours: Number(s.hours) || 0 })),
+    targetTypes,
+    startDate,
+    startWithRecovery,
+    races: races.map(r => ({ ...r, distance: r.distance !== undefined && r.distance !== null && (r.distance as any) !== '' ? Number(r.distance) || 0 : undefined })),
+    progression,
+    planMode,
+    manualPhases,
+    sessionsPerWeek,
+    availableDays,
+    longRunDays,
+    distributionModel,
+    targetModality,
+    includeHomeTrainer,
+    includeStrength,
+    weChocFrequency,
     initialTss: loadData?.avgWeeklyTss
   };
   
@@ -427,8 +443,9 @@ export default function PlanBuilderPage() {
                             <div className="relative flex items-center">
                               <input 
                                 type="number" 
-                                value={race.distance || ''}
-                                onChange={(e) => setRaces(races.map(r => r.id === race.id ? { ...r, distance: Number(e.target.value) } : r))}
+                                value={race.distance === undefined || race.distance === null || (race.distance as any) === '' ? '' : race.distance}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => setRaces(races.map(r => r.id === race.id ? { ...r, distance: e.target.value === '' ? '' as any : Number(e.target.value) } : r))}
                                 className={`${styles.input} w-full pr-8`}
                                 placeholder="Distance"
                               />
@@ -528,8 +545,9 @@ export default function PlanBuilderPage() {
                             <input 
                               type="number"
                               step="0.5"
-                              value={sport.hours}
-                              onChange={(e) => setSports(sports.map(s => s.id === sport.id ? { ...s, hours: Number(e.target.value) } : s))}
+                              value={sport.hours === undefined || sport.hours === null || (sport.hours as any) === '' ? '' : sport.hours}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => setSports(sports.map(s => s.id === sport.id ? { ...s, hours: e.target.value === '' ? '' as any : Number(e.target.value) } : s))}
                               className="w-16 bg-transparent border-none text-lg font-black text-orange-600 px-1 py-1 text-right outline-none appearance-none"
                             />
                             <span className="text-sm font-bold text-[var(--text-secondary)] mr-2">h</span>

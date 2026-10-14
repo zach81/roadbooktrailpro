@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { fetchCoachedAthletes, fetchAthleteLoad } from "@/lib/intervalsApi";
-import { Activity, TrendingUp, TrendingDown, Heart, Flame, Watch, RefreshCw, AlertCircle, Settings, User } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, Heart, Flame, Watch, RefreshCw, AlertCircle, Settings, User, Sparkles, Key, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import styles from "./page.module.css";
 
@@ -25,6 +25,8 @@ export default function AthletesPage() {
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const [quickId, setQuickId] = useState("");
+  const [quickKey, setQuickKey] = useState("");
 
   const loadData = async () => {
     setIsLoading(true);
@@ -151,28 +153,97 @@ export default function AthletesPage() {
       <div className="space-y-6">
         
         <header className={styles.header}>
-          <h1>Mes Athlètes</h1>
-          <button 
-            onClick={loadData}
-            disabled={isLoading}
-            className="btn btn-secondary"
-          >
-            <RefreshCw size={18} className={isLoading ? "animate-spin text-[var(--text-secondary)]" : "text-[var(--text-secondary)]"} />
-            <span className="font-medium">Actualiser</span>
-          </button>
+          <div>
+            <h1>Mes Athlètes</h1>
+            <p className="text-xs text-gray-500 mt-1">Gérez vos athlètes et synchronisez avec Intervals.icu</p>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <Link 
+              href="/coach-ia" 
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-emerald-600 hover:from-orange-600 hover:to-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+            >
+              <Sparkles size={16} />
+              <span>Coach IA</span>
+            </Link>
+            <button 
+              onClick={loadData}
+              disabled={isLoading}
+              className="btn btn-secondary text-xs"
+            >
+              <RefreshCw size={16} className={isLoading ? "animate-spin text-[var(--text-secondary)]" : "text-[var(--text-secondary)]"} />
+              <span className="font-medium">Actualiser</span>
+            </button>
+          </div>
         </header>
 
         {apiKeyMissing ? (
-          <div className="bg-white p-8 rounded-2xl shadow-sm border border-orange-200 text-center flex flex-col items-center">
-            <AlertCircle className="text-orange-500 w-12 h-12 mb-4" />
-            <h2 className="text-xl font-bold text-slate-800 mb-2">Configuration requise</h2>
-            <p className="text-gray-600 mb-6 max-w-md">
-              Pour afficher vos données et celles de vos athlètes, vous devez configurer votre identifiant et votre clé API Intervals.icu.
-            </p>
-            <Link href="/" className="flex items-center gap-2 px-6 py-3 bg-orange-500 text-white font-medium rounded-xl hover:bg-orange-600 transition">
-              <Settings size={18} />
-              Aller à l'accueil pour configurer
-            </Link>
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-orange-200 max-w-lg mx-auto text-left">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-orange-100 text-orange-600 rounded-xl">
+                <Key size={24} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">Connexion Intervals.icu</h2>
+                <p className="text-xs text-gray-500">Renseignez vos identifiants pour charger vos données et activer l'IA.</p>
+              </div>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (!quickId.trim() || !quickKey.trim()) return;
+              localStorage.setItem("intervalsAthleteId", quickId.trim());
+              localStorage.setItem("intervalsApiKey", quickKey.trim());
+              setApiKeyMissing(false);
+              loadData();
+            }} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  ID Athlète (ex: i12345)
+                </label>
+                <input
+                  type="text"
+                  value={quickId}
+                  onChange={(e) => setQuickId(e.target.value)}
+                  placeholder="Ex: i12345"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Clé API Intervals.icu
+                </label>
+                <input
+                  type="password"
+                  value={quickKey}
+                  onChange={(e) => setQuickKey(e.target.value)}
+                  placeholder="Collez votre clé API Intervals.icu"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition font-mono text-xs"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Disponible dans <a href="https://intervals.icu/settings" target="_blank" rel="noreferrer" className="text-orange-600 underline">Paramètres Intervals.icu &gt; Developer</a>.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={!quickId.trim() || !quickKey.trim()}
+                  className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={16} />
+                  Enregistrer et charger mes données
+                </button>
+                <Link
+                  href="/settings"
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition"
+                >
+                  Plus d'options
+                </Link>
+              </div>
+            </form>
           </div>
         ) : isLoading ? (
           <div className={styles.grid}>

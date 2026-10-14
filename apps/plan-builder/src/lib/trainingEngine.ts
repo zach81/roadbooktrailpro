@@ -441,7 +441,7 @@ export async function generateWorkoutsForMacrocycle(macrocycle: Macrocycle, conf
            sportName = sportsList.find(s => s.name.toLowerCase().includes('renfo'))?.name || 'Renforcement';
            sportType = 'WeightTraining';
            type = 'Strength';
-        } else if (type === 'Recovery' || (type === 'Endurance' && idx !== longRunSessionIdx)) {
+        } else if (type === 'Recovery' || ((type as string) === 'Endurance' && idx !== longRunSessionIdx)) {
            // Essayer d'assigner un sport croisé (ex: Vélo) pour la récup / endurance de base
            const crossSport = sportsList.find(s => s.id !== primarySport.id && !s.name.toLowerCase().includes('renfo'));
            if (crossSport && Math.random() > 0.3) {

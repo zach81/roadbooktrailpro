@@ -311,7 +311,11 @@ export default function AdminPage() {
         event: editFormData.event,
         distance: parseFloat(editFormData.distance) || 0,
         elevation: parseFloat(editFormData.elevation) || 0,
-        waypoints: JSON.stringify(editFormData.waypoints)
+        waypoints: JSON.stringify(editFormData.waypoints.map(wp => ({
+          ...wp,
+          km: wp.km === '' || isNaN(parseFloat(wp.km)) ? 0 : parseFloat(wp.km),
+          ele: wp.ele === '' || isNaN(parseFloat(wp.ele)) ? 0 : parseFloat(wp.ele)
+        })))
       };
 
       await updateDoc(docRef, updateData);
@@ -417,6 +421,7 @@ export default function AdminPage() {
                         type="number" 
                         step="0.1"
                         value={formData.distance}
+                        onFocus={e => e.target.select()}
                         onChange={e => setFormData({...formData, distance: e.target.value})}
                       />
                     </div>
@@ -425,6 +430,7 @@ export default function AdminPage() {
                       <input 
                         type="number"
                         value={formData.elevation}
+                        onFocus={e => e.target.select()}
                         onChange={e => setFormData({...formData, elevation: e.target.value})}
                       />
                     </div>
@@ -503,11 +509,11 @@ export default function AdminPage() {
                   <div className={styles.formRow}>
                     <div className={styles.formGroup}>
                       <label>Distance Officielle (km)</label>
-                      <input type="number" step="0.1" className="input-field" value={editFormData.distance} onChange={e => setEditFormData({...editFormData, distance: e.target.value})} />
+                      <input type="number" step="0.1" className="input-field" value={editFormData.distance} onFocus={e => e.target.select()} onChange={e => setEditFormData({...editFormData, distance: e.target.value})} />
                     </div>
                     <div className={styles.formGroup}>
                       <label>Dénivelé Officiel (m)</label>
-                      <input type="number" className="input-field" value={editFormData.elevation} onChange={e => setEditFormData({...editFormData, elevation: e.target.value})} />
+                      <input type="number" className="input-field" value={editFormData.elevation} onFocus={e => e.target.select()} onChange={e => setEditFormData({...editFormData, elevation: e.target.value})} />
                     </div>
                   </div>
 
@@ -527,9 +533,24 @@ export default function AdminPage() {
                               <option value="full">Ravito</option>
                               <option value="base">Base vie</option>
                             </select>
-                            <input type="number" step="0.1" value={wp.km || 0} onChange={e => handleUpdateWaypoint(wp.id, {km: parseFloat(e.target.value) || 0})} placeholder="km" className={styles.wpInputSmall} />
+                            <input 
+                              type="number" 
+                              step="0.1" 
+                              value={wp.km === '' || wp.km === undefined || wp.km === null ? '' : wp.km} 
+                              onFocus={e => e.target.select()}
+                              onChange={e => handleUpdateWaypoint(wp.id, {km: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
+                              placeholder="km" 
+                              className={styles.wpInputSmall} 
+                            />
                             <span className={styles.wpLabel}>km</span>
-                            <input type="number" value={wp.ele || 0} onChange={e => handleUpdateWaypoint(wp.id, {ele: parseFloat(e.target.value) || 0})} placeholder="Alt" className={styles.wpInputSmall} />
+                            <input 
+                              type="number" 
+                              value={wp.ele === '' || wp.ele === undefined || wp.ele === null ? '' : wp.ele} 
+                              onFocus={e => e.target.select()}
+                              onChange={e => handleUpdateWaypoint(wp.id, {ele: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
+                              placeholder="Alt" 
+                              className={styles.wpInputSmall} 
+                            />
                             <span className={styles.wpLabel}>m</span>
                             <button type="button" onClick={() => handleRemoveWaypoint(wp.id)} className={styles.deleteWpBtn}><Trash2 size={16} /></button>
                           </div>
