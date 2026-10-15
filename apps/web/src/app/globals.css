@@ -134,6 +134,12 @@ a:hover { color: var(--color-primary-hover); }
   padding: 0 24px;
 }
 
+@media (max-width: 768px) {
+  .container {
+    padding: 0 14px;
+  }
+}
+
 .layout-with-sidebar {
   display: flex;
   flex: 1;
@@ -144,6 +150,14 @@ a:hover { color: var(--color-primary-hover); }
   flex: 1;
   padding-top: 2rem;
   padding-bottom: 4rem;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: 1.25rem;
+    /* Extra bottom padding to account for fixed bottom navigation bar + safe area */
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 16px));
+  }
 }
 
 /* --- Buttons -------------------------------------------------------------- */
@@ -223,6 +237,12 @@ a:hover { color: var(--color-primary-hover); }
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-subtle);
   transition: box-shadow var(--transition-normal);
+}
+@media (max-width: 768px) {
+  .card {
+    padding: 16px;
+    border-radius: var(--radius-md);
+  }
 }
 .card:hover {
   box-shadow: var(--shadow-md);

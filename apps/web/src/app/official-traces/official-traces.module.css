@@ -196,3 +196,40 @@
   padding-bottom: 12px;
   margin: 0;
 }
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px 12px;
+  }
+
+  .header {
+    margin-bottom: 20px;
+  }
+
+  .header h1 {
+    font-size: 1.5rem;
+  }
+
+  .searchInput {
+    padding: 12px 16px 12px 42px;
+    font-size: 0.95rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .cardContent {
+    padding: 16px;
+  }
+
+  .statsRow {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .statValue {
+    font-size: 0.95rem;
+  }
+}

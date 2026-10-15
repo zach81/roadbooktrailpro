@@ -1,0 +1,57 @@
+
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B4A" />
+      <stop offset="50%" stop-color="#FF5A36" />
+      <stop offset="100%" stop-color="#E04320" />
+    </linearGradient>
+    <linearGradient id="peakGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F3F4F6" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14C38E" />
+      <stop offset="100%" stop-color="#0E9F73" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  
+    <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+
+  <!-- Mountain Trail Graphic inside Safe Area -->
+  <g transform="translate(0, 0)">
+    <!-- Back Peak -->
+    <path d="M140 370 L256 160 L372 370 Z" fill="#FF8469" opacity="0.6" />
+    
+    <!-- Left Mid Peak -->
+    <path d="M70 370 L180 210 L300 370 Z" fill="#FFE2DC" opacity="0.35" />
+
+    <!-- Main Peak with Shadow -->
+    <path d="M190 370 L320 130 L450 370 Z" fill="url(#peakGrad)" filter="url(#shadow)" />
+
+    <!-- Snow cap on Main Peak -->
+    <path d="M320 130 L360 204 L335 195 L320 208 L305 195 L280 204 Z" fill="#FFFFFF" />
+
+    <!-- Stylized Trail Contour Line -->
+    <path d="M90 350 Q 210 320, 270 290 T 420 270" stroke="url(#accentGrad)" stroke-width="14" stroke-linecap="round" fill="none" filter="url(#shadow)" />
+    
+    <!-- Cairn Stones Symbol -->
+    <g transform="translate(190, 260)" filter="url(#shadow)">
+      <!-- Stone 3 (top) -->
+      <ellipse cx="66" cy="18" rx="20" ry="10" fill="#FFFFFF" />
+      <!-- Stone 2 (middle) -->
+      <ellipse cx="66" cy="38" rx="36" ry="14" fill="#FFFFFF" opacity="0.9" />
+      <!-- Stone 1 (base) -->
+      <ellipse cx="66" cy="62" rx="52" ry="18" fill="#FFFFFF" opacity="0.8" />
+      
+      <!-- Flag pin on top of Cairn -->
+      <circle cx="66" cy="5" r="5" fill="#14C38E" />
+    </g>
+  </g>
+</svg>

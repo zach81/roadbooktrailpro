@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useNavbarActions } from '@/context/NavbarActionsContext';
-import { LogOut, User, Map, HelpCircle, Settings, Shield, Menu, X } from 'lucide-react';
+import { LogOut, User, Map, HelpCircle, Settings, Shield, Menu, X, LayoutDashboard, Compass, Apple, Calendar } from 'lucide-react';
 import styles from './Navbar.module.css';
 
 export default function Navbar() {
@@ -48,19 +48,46 @@ export default function Navbar() {
         )}
         
         {/* Hamburger Menu Toggle (Mobile) */}
-        <button className={styles.hamburgerBtn} onClick={toggleMenu}>
+        <button 
+          className={styles.hamburgerBtn} 
+          onClick={toggleMenu}
+          aria-label={isMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+        >
           {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
         <div className={`${styles.navLinks} ${isMenuOpen ? styles.navLinksOpen : ''}`}>
           {currentUser ? (
             <>
-              {/* Actions on Mobile inside menu */}
+              {/* Primary navigation on Mobile inside menu */}
+              <div className={styles.mobileNavSection}>
+                <Link href="/dashboard" className={styles.mobileNavItem} onClick={() => setIsMenuOpen(false)}>
+                  <LayoutDashboard size={18} />
+                  <span>Mes Roadbooks</span>
+                </Link>
+                <Link href="/official-traces" className={styles.mobileNavItem} onClick={() => setIsMenuOpen(false)}>
+                  <Compass size={18} />
+                  <span>Traces Officielles</span>
+                </Link>
+                <Link href="/nutrition" className={styles.mobileNavItem} onClick={() => setIsMenuOpen(false)}>
+                  <Apple size={18} />
+                  <span>Base Nutrition</span>
+                </Link>
+                {isAdmin && (
+                  <a href="/coach" className={styles.mobileNavItem} onClick={() => setIsMenuOpen(false)}>
+                    <Calendar size={18} />
+                    <span>Coaching & Plans</span>
+                  </a>
+                )}
+              </div>
+
+              {/* Actions on Mobile inside menu (e.g. Export, Share buttons from page) */}
               {actions && (
                 <div className={styles.mobilePageActions}>
                   {actions}
                 </div>
               )}
+
               <div className={styles.userMenu}>
                 {isAdmin && (
                   <Link href="/admin" className={styles.helpLink} title="Administration" onClick={() => setIsMenuOpen(false)}>

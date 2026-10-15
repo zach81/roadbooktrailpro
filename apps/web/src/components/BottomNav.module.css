@@ -1,0 +1,72 @@
+.bottomNav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .bottomNav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-subtle);
+    padding: 6px 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    z-index: 90;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  .navItem {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-family: var(--font-display);
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    transition: color var(--transition-fast), transform var(--transition-fast);
+    flex: 1;
+    max-width: 72px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .navItem:active {
+    transform: scale(0.92);
+  }
+
+  .navItemActive {
+    color: var(--color-primary);
+    font-weight: 700;
+  }
+
+  .iconWrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .activePill {
+    position: absolute;
+    top: -4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--color-primary);
+  }
+
+  .label {
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+}

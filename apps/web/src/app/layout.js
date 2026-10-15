@@ -3,6 +3,9 @@ import { AuthProvider } from '@/context/AuthContext';
 import { NavbarActionsProvider } from '@/context/NavbarActionsContext';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar/Sidebar';
+import BottomNav from '@/components/BottomNav';
+import LandscapePrompt from '@/components/LandscapePrompt';
+import PwaManager from '@/components/PwaManager';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,16 +19,33 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-
 export const metadata = {
-  title: "mykairn",
+  title: "mykairn - Trail Roadbook Pro",
   description: "Application professionnelle pour la génération de roadbooks de trail à partir de traces GPX.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "mykairn",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" }
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }
+    ]
+  }
 };
 
 export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#FF5A36",
 };
 
 export default function RootLayout({ children }) {
@@ -34,16 +54,24 @@ export default function RootLayout({ children }) {
       lang="fr"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </head>
       <body className="min-h-screen flex flex-col m-0">
         <NavbarActionsProvider>
           <AuthProvider>
             <Navbar />
+            <LandscapePrompt />
             <div className="layout-with-sidebar">
               <Sidebar />
               <main className="container main-content">
                 {children}
               </main>
             </div>
+            <BottomNav />
+            <PwaManager />
           </AuthProvider>
         </NavbarActionsProvider>
       </body>

@@ -460,4 +460,90 @@
   border-color: var(--primary-color);
 }
 
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem 0;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 1.25rem;
+  }
+
+  .title {
+    font-size: 1.5rem;
+  }
+
+  .actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .actions button,
+  .actions a {
+    flex: 1;
+    min-width: 130px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    justify-content: center;
+  }
+
+  .overviewCards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 1.25rem;
+  }
+
+  .card {
+    padding: 12px 10px;
+  }
+
+  .cardLabel {
+    font-size: 0.75rem;
+    margin-bottom: 4px;
+  }
+
+  .cardValue {
+    font-size: 1.15rem;
+  }
+
+  .section {
+    padding: 14px 12px;
+    margin-bottom: 1.25rem;
+    border-radius: var(--radius-md);
+  }
+
+  .sectionTitle {
+    font-size: 1.15rem;
+    margin-bottom: 1rem;
+  }
+
+  .table th, .table td {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .checklist {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .exportCard {
+    padding: 16px 12px;
+  }
+
+  .watchTabBtn {
+    flex: 1;
+    min-width: 80px;
+    font-size: 0.75rem;
+    padding: 8px 10px;
+    justify-content: center;
+  }
+}
+
 
