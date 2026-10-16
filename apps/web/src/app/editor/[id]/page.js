@@ -98,6 +98,16 @@ export default function RoadbookEditor() {
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [showNutritionModal, setShowNutritionModal] = useState(false);
+  const [activeTab, setActiveTab] = useState("all");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // Sur smartphone / tablette ou écran court en paysage, focaliser directement sur Carte & Profil
+      if (window.innerWidth < 1024 || window.innerHeight < 600) {
+        setActiveTab("map");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (points.length > 0) {
@@ -538,13 +548,69 @@ export default function RoadbookEditor() {
         </div>
       </div>
 
-      {!targetTime && (
-        <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', borderRadius: 'var(--radius-md)', border: '1px solid #F59E0B' }}>
-          <strong>⚠️ Action requise :</strong> Veuillez renseigner un <strong>Objectif Course</strong> dans les paramètres ci-dessous pour calculer les temps de passage sur chaque segment. L'Index UTMB ne sert désormais qu'à ajuster l'effort (montée, descente, fatigue).
+      {/* Navigation ergonomique par onglets */}
+      <div className={styles.tabsContainer} role="tablist" aria-label="Sections de l'éditeur">
+        <button 
+          type="button" 
+          role="tab"
+          aria-selected={activeTab === 'map'}
+          className={`${styles.tab} ${activeTab === 'map' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('map')}
+        >
+          <span>🗺️</span> Carte & Profil
+        </button>
+        <button 
+          type="button" 
+          role="tab"
+          aria-selected={activeTab === 'roadbook'}
+          className={`${styles.tab} ${activeTab === 'roadbook' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('roadbook')}
+        >
+          <span>📋</span> Roadbook ({waypoints.length})
+        </button>
+        <button 
+          type="button" 
+          role="tab"
+          aria-selected={activeTab === 'params'}
+          className={`${styles.tab} ${activeTab === 'params' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('params')}
+        >
+          <span>⚙️</span> Paramètres
+        </button>
+        <button 
+          type="button" 
+          role="tab"
+          aria-selected={activeTab === 'all'}
+          className={`${styles.tab} ${styles.desktopOnlyTab} ${activeTab === 'all' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('all')}
+        >
+          <span>👁️</span> Tout afficher
+        </button>
+      </div>
+
+      {!targetTime && activeTab !== 'params' && (
+        <div style={{ marginBottom: '16px', padding: '12px 16px', background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', borderRadius: 'var(--radius-md)', border: '1px solid #F59E0B', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', fontSize: '0.85rem' }}>
+          <span>⚠️ <strong>Objectif Course non défini :</strong> les allures et temps de passage nécessitent un objectif.</span>
+          <button 
+            type="button" 
+            onClick={() => setActiveTab('params')} 
+            className="btn btn-secondary" 
+            style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+          >
+            Définir l'objectif →
+          </button>
         </div>
       )}
 
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', padding: '24px' }}>
+      {(activeTab === 'params' || activeTab === 'all') && (
+        <>
+          {!targetTime && activeTab === 'params' && (
+            <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', borderRadius: 'var(--radius-md)', border: '1px solid #F59E0B' }}>
+              <strong>⚠️ Action requise :</strong> Veuillez renseigner un <strong>Objectif Course</strong> dans les paramètres ci-dessous pour calculer les temps de passage sur chaque segment. L'Index UTMB ne sert désormais qu'à ajuster l'effort (montée, descente, fatigue).
+            </div>
+          )}
+
+          <div className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '24px', padding: '24px' }}>
         {/* Profil Coureur */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <h3 className={styles.sectionTitle}>⏱️ Course & Objectifs</h3>
@@ -896,14 +962,14 @@ export default function RoadbookEditor() {
                   padding: '16px', 
                   borderRadius: 'var(--radius-md)', 
                   width: '320px', 
-                  maxHeight: '400px',
+                  maxHeight: 'min(360px, 65vh)',
                   overflowY: 'auto',
                   display: 'flex', 
                   flexDirection: 'column', 
                   gap: '8px', 
                   boxShadow: 'var(--shadow-xl)', 
                   border: '1px solid var(--border-light)', 
-                  zIndex: 50 
+                  zIndex: 1200 
                 }}>
                   <div style={{ fontWeight: 'bold', borderBottom: '1px solid var(--border-light)', paddingBottom: '8px', marginBottom: '8px' }}>
                     Sélection des produits
@@ -998,42 +1064,49 @@ export default function RoadbookEditor() {
           </div>
         </div>
       </div>
+    </>
+  )}
 
       <div className={styles.layout}>
         <div className={styles.mainColumn}>
-          <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
-            <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Carte & Ravitaillements</h2>
-            <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              Cliquez sur la trace (ligne orange) pour ajouter un nouveau point de contrôle ou ravitaillement manuellement.
-            </p>
-            <MapComponent 
-              points={points} 
-              segments={segments} 
-              onAddWaypoint={handleAddWaypoint}
-              onRemoveWaypoint={handleRemoveWaypoint}
-              onUpdateWaypoint={handleUpdateWaypoint}
-              hoveredPoint={hoveredPoint}
-              waypointCount={waypoints.length}
-            />
-          </div>
+          {(activeTab === 'map' || activeTab === 'all') && (
+            <>
+              <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
+                <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Carte & Ravitaillements</h2>
+                <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Cliquez sur la trace (ligne orange) pour ajouter un nouveau point de contrôle ou ravitaillement manuellement.
+                </p>
+                <MapComponent 
+                  points={points} 
+                  segments={segments} 
+                  onAddWaypoint={handleAddWaypoint}
+                  onRemoveWaypoint={handleRemoveWaypoint}
+                  onUpdateWaypoint={handleUpdateWaypoint}
+                  hoveredPoint={hoveredPoint}
+                  waypointCount={waypoints.length}
+                />
+              </div>
 
-          <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
-            <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Profil Altimétrique</h2>
-            <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              Cliquez n'importe où sur le graphique pour ajouter un point de contrôle à cette distance exacte.
-            </p>
-            <ElevationProfile 
-              points={points} 
-              segments={segments} 
-              startTime={startTime} 
-              distanceFactor={currentDistFactor}
-              onAddWaypointByDistance={(dist) => addWaypointAtDistance(dist)} 
-              onHoverDistance={handleHoverDistance}
-            />
-          </div>
+              <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
+                <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Profil Altimétrique</h2>
+                <p style={{ marginBottom: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Cliquez n'importe où sur le graphique pour ajouter un point de contrôle à cette distance exacte.
+                </p>
+                <ElevationProfile 
+                  points={points} 
+                  segments={segments} 
+                  startTime={startTime} 
+                  distanceFactor={currentDistFactor}
+                  onAddWaypointByDistance={(dist) => addWaypointAtDistance(dist)} 
+                  onHoverDistance={handleHoverDistance}
+                />
+              </div>
+            </>
+          )}
 
-          <div style={{ marginBottom: '24px' }}>
-            <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Roadbook</h2>
+          {(activeTab === 'roadbook' || activeTab === 'all') && (
+            <div style={{ marginBottom: '24px' }}>
+              <h2 style={{ marginBottom: '16px', fontSize: '1.25rem' }}>Roadbook</h2>
             
             {!showManualAdd ? (
               <button 
@@ -1514,6 +1587,7 @@ export default function RoadbookEditor() {
               {segments.length === 0 && <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>Aucun segment calculé</div>}
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

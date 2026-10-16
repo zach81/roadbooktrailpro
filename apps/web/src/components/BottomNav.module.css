@@ -13,7 +13,7 @@
     border-top: 1px solid var(--border-subtle);
     padding: 6px 8px;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
-    z-index: 90;
+    z-index: 990;
     box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -70,3 +70,17 @@
     line-height: 1;
   }
 }
+
+@media (max-height: 550px) and (orientation: landscape) {
+  .bottomNav {
+    padding: 2px 6px;
+    padding-bottom: max(3px, env(safe-area-inset-bottom));
+  }
+  .navItem {
+    padding: 2px 4px;
+    font-size: 0.625rem;
+    gap: 1px;
+    max-width: 60px;
+  }
+}
+

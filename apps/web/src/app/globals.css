@@ -160,6 +160,16 @@ a:hover { color: var(--color-primary-hover); }
   }
 }
 
+@media (max-height: 550px) and (orientation: landscape) {
+  .container {
+    padding: 0 10px;
+  }
+  .main-content {
+    padding-top: 0.75rem;
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 8px));
+  }
+}
+
 /* --- Buttons -------------------------------------------------------------- */
 .btn {
   display: inline-flex;
@@ -341,5 +351,6 @@ textarea::placeholder {
 
 /* --- Leaflet Fixes -------------------------------------------------------- */
 .leaflet-container {
-  touch-action: none !important;
+  touch-action: pan-x pan-y !important;
+  isolation: isolate;
 }

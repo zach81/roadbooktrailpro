@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMapEvents, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { Maximize2, Minimize2, Crosshair, MapPin } from 'lucide-react';
+import styles from './MapComponent.module.css';
 
 // Fix leaflet icon issue in Next.js
 delete L.Icon.Default.prototype._getIconUrl;
@@ -35,6 +37,7 @@ function MapClickHandler({ onClick }) {
 
 export default function MapComponent({ points, segments, onAddWaypoint, onRemoveWaypoint, onUpdateWaypoint, hoveredPoint, waypointCount }) {
   const mapRef = useRef(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const polylinePositions = useMemo(() => {
     return points.map(p => [p.lat, p.lon]);
@@ -45,6 +48,24 @@ export default function MapComponent({ points, segments, onAddWaypoint, onRemove
     if (polylinePositions.length === 0) return null;
     return L.latLngBounds(polylinePositions);
   }, [polylinePositions]);
+
+  const handleRecenter = (e) => {
+    e.stopPropagation();
+    if (mapRef.current && bounds) {
+      mapRef.current.fitBounds(bounds, { padding: [30, 30] });
+    }
+  };
+
+  const handleToggleExpand = (e) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+    // Invalidate size after transition
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    }, 350);
+  };
 
   // Trouver le point de la trace le plus proche du clic
   const handleMapClick = (latlng) => {
@@ -77,7 +98,39 @@ export default function MapComponent({ points, segments, onAddWaypoint, onRemove
   };
 
   return (
-    <div style={{ height: '400px', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-subtle)', zIndex: 10 }}>
+    <div className={`${styles.mapWrapper} ${isExpanded ? styles.mapWrapperExpanded : ''}`}>
+      {/* Floating map controls */}
+      <div className={styles.mapFloatingControls}>
+        <button
+          type="button"
+          onClick={handleRecenter}
+          className={styles.mapBtn}
+          title="Recentrer sur la trace"
+          aria-label="Recentrer la carte"
+        >
+          <Crosshair size={14} />
+          <span>Recentrer</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleToggleExpand}
+          className={styles.mapBtn}
+          title={isExpanded ? "Réduire la carte" : "Agrandir la carte"}
+          aria-label={isExpanded ? "Réduire la carte" : "Agrandir la carte"}
+        >
+          {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          <span>{isExpanded ? "Réduire" : "Plein écran"}</span>
+        </button>
+      </div>
+
+      {waypointCount > 0 && (
+        <div className={styles.mapBadge}>
+          <MapPin size={13} style={{ color: 'var(--color-primary)' }} />
+          <span>{waypointCount} point{waypointCount > 1 ? 's' : ''} de passage</span>
+        </div>
+      )}
+
       {bounds && (
         <MapContainer bounds={bounds} style={{ height: '100%', width: '100%' }} ref={mapRef}>
           <TileLayer

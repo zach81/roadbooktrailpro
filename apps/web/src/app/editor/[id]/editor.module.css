@@ -16,31 +16,58 @@
 
 .tabsContainer {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   background-color: var(--bg-surface-elevated);
-  padding: 4px;
-  border-radius: var(--radius-lg);
+  padding: 5px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 8px;
+}
+
+.tabsContainer::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
   color: var(--text-secondary);
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-weight: 600;
   cursor: pointer;
-  text-decoration: none;
-  font-size: 0.875rem;
-  transition: all 0.2s ease;
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 .tab:hover {
   color: var(--text-primary);
+  background-color: rgba(0, 0, 0, 0.04);
 }
 
 .activeTab {
-  background-color: var(--bg-surface);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--bg-surface) !important;
+  color: var(--color-primary) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 1024px) {
+  .desktopOnlyTab {
+    display: none !important;
+  }
 }
 
 .titleSection {
@@ -590,3 +617,84 @@
     justify-content: space-between;
   }
 }
+
+@media (max-height: 550px) and (orientation: landscape) {
+  .editorContainer {
+    gap: 12px;
+  }
+
+  .editorHeader {
+    padding-bottom: 8px;
+    gap: 8px;
+  }
+
+  .titleSection h1,
+  .titleSection input {
+    font-size: 1.15rem !important;
+  }
+
+  .tabsContainer {
+    padding: 3px;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .tab {
+    padding: 5px 12px;
+    font-size: 0.75rem;
+  }
+
+  .statsBar {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto;
+    white-space: nowrap;
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    scrollbar-width: none;
+    grid-template-columns: none !important;
+  }
+
+  .statsBar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .statBox {
+    padding: 6px 12px !important;
+    min-width: 90px !important;
+    border-right: 1px solid var(--border-subtle) !important;
+    border-top: none !important;
+    background-color: var(--bg-surface) !important;
+  }
+
+  .statBox:last-child {
+    border-right: none !important;
+  }
+
+  .statBox span {
+    font-size: 0.6rem !important;
+    margin-bottom: 2px !important;
+  }
+
+  .statBox strong {
+    font-size: 0.95rem !important;
+  }
+
+  .statBoxTime {
+    grid-column: auto !important;
+    border-left: 2px solid rgba(16, 185, 129, 0.5) !important;
+  }
+
+  .segmentCard {
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+
+  .interactiveForm {
+    padding: 12px 14px;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+}
+

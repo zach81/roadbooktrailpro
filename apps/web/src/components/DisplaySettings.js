@@ -84,12 +84,14 @@ export default function DisplaySettings({ config, updateConfig }) {
         top: 'calc(100% + 8px)', 
         right: 0, 
         width: '280px',
+        maxHeight: 'min(380px, 75vh)',
+        overflowY: 'auto',
         background: 'var(--bg-surface)', 
         border: '1px solid var(--border-light)', 
         borderRadius: 'var(--radius-lg)', 
         padding: '16px',
-        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-        zIndex: 100,
+        boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+        zIndex: 1200,
         display: 'grid',
         gap: '12px'
       }}>

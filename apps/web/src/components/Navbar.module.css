@@ -4,7 +4,7 @@
   border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
   padding: 0;
   height: 58px;
   display: flex;
@@ -201,7 +201,7 @@
   display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 550px) and (orientation: landscape) {
   .logoText {
     display: block;
     font-size: 1.15rem;
@@ -240,6 +240,7 @@
     gap: 12px;
     max-height: calc(100vh - 58px);
     overflow-y: auto;
+    z-index: 1100;
   }
 
   .navLinksOpen {
@@ -302,3 +303,21 @@
     white-space: nowrap;
   }
 }
+
+@media (max-height: 550px) and (orientation: landscape) {
+  .navbar {
+    height: 48px;
+  }
+  .navContainer {
+    padding: 0 10px;
+  }
+  .logoText {
+    font-size: 1.1rem;
+  }
+  .navLinks {
+    top: 48px;
+    max-height: calc(100vh - 48px);
+    padding: 10px 12px;
+  }
+}
+

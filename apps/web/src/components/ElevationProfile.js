@@ -346,7 +346,7 @@ export default function ElevationProfile({ points, segments, onAddWaypointByDist
 
   return (
     <div
-      style={{ height: '220px', width: '100%', position: 'relative' }}
+      style={{ height: 'clamp(160px, 26vh, 220px)', width: '100%', position: 'relative' }}
       onMouseLeave={() => onHoverDistance && onHoverDistance(null)}
     >
       <Line ref={chartRef} data={data} options={options} plugins={[simpleWaypointsPlugin, nightZonesPlugin]} />
