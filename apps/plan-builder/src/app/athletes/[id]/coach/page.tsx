@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { 
   ArrowLeft, Calendar as CalendarIcon, Flag, Target, TrendingUp, 
   Activity, Zap, BarChart2, CheckCircle2, Sliders, Mountain, 
-  Heart, Watch, Dumbbell, Route, HelpCircle, Trash2
+  Heart, Watch, Dumbbell, Route, HelpCircle, Trash2, GitCompare
 } from 'lucide-react';
 import { Race, TargetType, ProgressionParams } from '@/types';
 import { fetchAthleteLoad, fetchAthleteEvents } from '@/lib/intervalsApi';
@@ -329,6 +329,15 @@ export default function PlanBuilderPage() {
               </div>
             </div>
           )}
+          <button 
+            type="button"
+            onClick={() => router.push(`/comparator?athlete=${encodeURIComponent(athleteName || '')}&athleteId=${encodeURIComponent(athleteId || '')}`)}
+            className="btn btn-secondary flex items-center gap-2"
+            title="Comparateur de trace & Virtual Partner"
+          >
+            <GitCompare size={18} className="text-orange-600" />
+            <span className="hidden sm:inline">Comparateur</span>
+          </button>
           <button 
             onClick={handleGenerate}
             disabled={isGenerating}

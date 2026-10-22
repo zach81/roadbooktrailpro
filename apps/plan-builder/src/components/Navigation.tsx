@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, Users, Settings, Activity, Map, User, LogOut, ArrowLeft, Menu, X, Sparkles } from "lucide-react";
+import { Calendar, Users, Settings, Activity, Map, User, LogOut, ArrowLeft, Menu, X, Sparkles, GitCompare } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
 import styles from "./Navigation.module.css";
@@ -18,6 +18,7 @@ export default function Navigation() {
     { name: "Athlètes", href: "/", icon: Users },
     { name: "Coach IA", href: "/coach-ia", icon: Sparkles },
     { name: "Séances", href: "/workouts", icon: Activity },
+    { name: "Comparateur", href: "/comparator", icon: GitCompare },
     { name: "Paramètres", href: "/settings", icon: Settings },
   ];
 

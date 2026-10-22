@@ -35,7 +35,7 @@ import {
   PieChart, 
   Pie
 } from "recharts";
-import { Calendar, Activity, TrendingUp, Settings, Download, Trash2, Edit3, Database, ArrowLeft, Heart, Flame, Watch, Target, Mountain, Map, ShieldAlert, Zap, LayoutList, CalendarDays } from "lucide-react";
+import { Calendar, Activity, TrendingUp, Settings, Download, Trash2, Edit3, Database, ArrowLeft, Heart, Flame, Watch, Target, Mountain, Map, ShieldAlert, Zap, LayoutList, CalendarDays, GitCompare } from "lucide-react";
 
 const generateDurabilityData = (stats: any) => {
   if (!stats) return [];
@@ -750,6 +750,16 @@ export default function AthletePlanner() {
               <svg className={`w-5 h-5 ${isFetchingAthletes ? 'lucide-spin text-[var(--color-primary)]' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
               </svg>
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => router.push(`/comparator?athlete=${encodeURIComponent(athleteStats?.name || '')}&athleteId=${encodeURIComponent(athleteId || '')}`)}
+              className="btn btn-secondary w-full sm:w-auto"
+              title="Comparateur de traces & Virtual Partner"
+            >
+              <GitCompare size={18} className="text-orange-600" />
+              Comparateur Course
             </button>
             
             <button

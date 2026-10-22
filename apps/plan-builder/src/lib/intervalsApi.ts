@@ -595,3 +595,104 @@ export async function fetchAthleteFullProfile(athleteId: string, apiKey: string)
   }
 }
 
+export interface IntervalsActivity {
+  id: string | number;
+  name: string;
+  type: string;
+  start_date_local: string;
+  distance: number; // in meters
+  moving_time: number; // in seconds
+  elapsed_time: number; // in seconds
+  total_elevation_gain: number; // in meters
+  icu_tss?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_speed?: number; // in m/s
+  has_gps?: boolean;
+  stream_types?: string[];
+  trainer?: boolean;
+  description?: string;
+  icu_recording_time?: number;
+}
+
+/**
+ * Fetches the list of activities (trainings/races) for an athlete over a given date range.
+ * Defaults to the last 90 days if not provided.
+ */
+export async function fetchIntervalsActivities(
+  athleteId: string,
+  apiKey: string,
+  oldest?: string,
+  newest?: string
+): Promise<IntervalsActivity[]> {
+  const now = new Date();
+  const defaultNewest = newest || now.toISOString().split('T')[0];
+  const defaultOldest = oldest || new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  const url = `https://intervals.icu/api/v1/athlete/${athleteId}/activities?oldest=${defaultOldest}&newest=${defaultNewest}`;
+  const headers = new Headers();
+  headers.append('Authorization', getBasicAuth(apiKey));
+  headers.append('Content-Type', 'application/json');
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Erreur récupération activités Intervals.icu (${response.status}) : ${errText}`);
+  }
+
+  const data = await response.json();
+  if (!Array.isArray(data)) return [];
+
+  return data.map((act: any) => {
+    const streamTypes: string[] = Array.isArray(act.stream_types) ? act.stream_types : [];
+    const hasLatlng = streamTypes.includes('latlng') || streamTypes.includes('lat_lng');
+    const outdoorGps = !act.trainer && (act.distance > 0) && ['Run', 'TrailRun', 'Ride', 'Gravel', 'Hike', 'Walk', 'NordicSki'].includes(act.type);
+
+    return {
+      id: act.id,
+      name: act.name || 'Entraînement sans nom',
+      type: act.type || 'Run',
+      start_date_local: act.start_date_local || '',
+      distance: act.distance || 0,
+      moving_time: act.moving_time || 0,
+      elapsed_time: act.elapsed_time || 0,
+      total_elevation_gain: act.total_elevation_gain || 0,
+      icu_tss: act.icu_tss ?? act.tss ?? undefined,
+      average_heartrate: act.average_heartrate ? Math.round(act.average_heartrate) : undefined,
+      max_heartrate: act.max_heartrate ? Math.round(act.max_heartrate) : undefined,
+      average_speed: act.average_speed || 0,
+      has_gps: hasLatlng || outdoorGps,
+      stream_types: streamTypes,
+      trainer: Boolean(act.trainer),
+      description: act.description || undefined,
+      icu_recording_time: act.icu_recording_time,
+    };
+  });
+}
+
+/**
+ * Fetches time-series stream data (GPS lat/lon, altitude, time, heartrate) for a specific activity.
+ */
+export async function fetchActivityStreams(
+  activityId: string | number,
+  apiKey: string,
+  types: string = 'time,latlng,altitude,fixed_altitude,heartrate,velocity_smooth'
+): Promise<Array<{ type: string; data?: any[]; data2?: any[] }>> {
+  const url = `https://intervals.icu/api/v1/activity/${activityId}/streams.json?types=${encodeURIComponent(types)}`;
+  const headers = new Headers();
+  headers.append('Authorization', getBasicAuth(apiKey));
+  headers.append('Content-Type', 'application/json');
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Erreur récupération flux GPS de l'activité ${activityId} (${response.status}) : ${errText}`);
+  }
+
+  const data = await response.json();
+  if (!Array.isArray(data)) {
+    throw new Error("Format de flux inattendu renvoyé par Intervals.icu");
+  }
+  return data;
+}
+
