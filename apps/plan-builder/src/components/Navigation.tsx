@@ -91,7 +91,7 @@ export default function Navigation() {
 
           <div className={styles.userMenu}>
             <a 
-              href="http://localhost:3000/dashboard"
+              href={process.env.NEXT_PUBLIC_MAIN_APP_URL || "/dashboard"}
               className={styles.settingsLink}
               title="Retour au Roadbook"
               onClick={() => setIsMenuOpen(false)}
