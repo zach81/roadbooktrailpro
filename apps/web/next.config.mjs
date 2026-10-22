@@ -11,6 +11,14 @@ const nextConfig = {
         source: '/coach/:path*',
         destination: `${process.env.PLAN_BUILDER_URL || 'http://localhost:3001'}/coach/:path*`,
       },
+      {
+        source: '/comparator',
+        destination: `${process.env.PLAN_BUILDER_URL || 'http://localhost:3001'}/coach/comparator`,
+      },
+      {
+        source: '/comparator/:path*',
+        destination: `${process.env.PLAN_BUILDER_URL || 'http://localhost:3001'}/coach/comparator/:path*`,
+      },
     ];
   },
 };

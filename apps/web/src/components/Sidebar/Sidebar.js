@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LayoutDashboard, Map, Compass, Settings, Apple, HelpCircle, Calendar } from 'lucide-react';
+import { LayoutDashboard, Map, Compass, Settings, Apple, HelpCircle, Calendar, GitCompare } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
 export default function Sidebar() {
@@ -18,10 +18,15 @@ export default function Sidebar() {
         <LayoutDashboard size={20} className={styles.icon} />
         Dashboard
       </Link>
+
+      <a href="/coach/comparator" className={`${styles.navItem} ${pathname.startsWith('/coach/comparator') ? styles.active : ''}`}>
+        <GitCompare size={20} className={styles.icon} />
+        Comparateur
+      </a>
       
       {/* Lien vers le Plan Builder (Réservé aux admins) */}
       {isAdmin && (
-        <a href="/coach" className={`${styles.navItem} ${pathname.startsWith('/coach') ? styles.active : ''}`}>
+        <a href="/coach" className={`${styles.navItem} ${pathname.startsWith('/coach') && !pathname.startsWith('/coach/comparator') ? styles.active : ''}`}>
           <Calendar size={20} className={styles.icon} />
           Coaching & Plans
         </a>
