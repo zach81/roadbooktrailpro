@@ -11,6 +11,43 @@ export interface TrackPoint {
   speedKmH?: number;
 }
 
+export interface CourseWaypoint {
+  id?: string;
+  name: string;
+  km: number;
+  ele: number;
+  plannedTimeSec?: number;
+  pauseMin?: number;
+  cutoffTime?: string;
+  type?: string;
+  lat?: number;
+  lon?: number;
+  pointIndex?: number;
+}
+
+export interface WaypointComparison {
+  id?: string;
+  name: string;
+  km: number;
+  ele: number;
+  type: string;
+  plannedTimeSec: number;
+  actualTimeSec: number;
+  deltaSec: number; // >0: ahead of roadbook, <0: behind
+  plannedPauseMin: number;
+  actualPauseSec?: number;
+  cutoffTime?: string;
+}
+
+export interface PacingAnalysis {
+  adherenceScore: number; // 0-100% adherence to planned pacing distribution
+  uphillDeltaSec: number; // time delta in climb (>3% grade)
+  downhillDeltaSec: number; // time delta in descent (<-3% grade)
+  flatDeltaSec: number; // time delta on flat
+  stoppedTimeActualSec: number;
+  stoppedTimePlannedSec: number;
+}
+
 export interface ParsedCourse {
   name: string;
   points: TrackPoint[];
@@ -23,7 +60,10 @@ export interface ParsedCourse {
   avgHr?: number;
   maxHr?: number;
   dateStr?: string;
-  sourceType: 'GPX' | 'TCX' | 'FIT' | 'INTERVALS';
+  sourceType: 'GPX' | 'TCX' | 'FIT' | 'INTERVALS' | 'ROADBOOK';
+  waypoints?: CourseWaypoint[];
+  targetTimeFormatted?: string;
+  pacingStrategy?: string;
 }
 
 export interface KmSplit {
@@ -46,6 +86,8 @@ export interface ComparisonResult {
   maxErrorKm: number;
   totalTimeDeltaSec: number; // t1_total - t2_total (>0: candidate is faster)
   notes: { km: number; min: number; txt: string; dy: number }[];
+  waypointSplits?: WaypointComparison[];
+  pacingAnalysis?: PacingAnalysis;
 }
 
 // Haversine formula to compute distance in km
@@ -478,6 +520,20 @@ export function createSingleCourseComparison(course: ParsedCourse): ComparisonRe
     });
   }
 
+  const waypointSplits: WaypointComparison[] = (course.waypoints || []).map((wp) => ({
+    id: wp.id,
+    name: wp.name,
+    km: wp.km,
+    ele: wp.ele,
+    type: wp.type || 'ravito',
+    plannedTimeSec: wp.plannedTimeSec || getPointAtDist(pts, wp.km).elapsedSec,
+    actualTimeSec: wp.plannedTimeSec || getPointAtDist(pts, wp.km).elapsedSec,
+    deltaSec: 0,
+    plannedPauseMin: wp.pauseMin || 0,
+    actualPauseSec: (wp.pauseMin || 0) * 60,
+    cutoffTime: wp.cutoffTime,
+  }));
+
   return {
     course1: course,
     course2: course,
@@ -488,6 +544,7 @@ export function createSingleCourseComparison(course: ParsedCourse): ComparisonRe
     maxErrorKm: 0,
     totalTimeDeltaSec: 0,
     notes: [],
+    waypointSplits: waypointSplits.length > 0 ? waypointSplits : undefined,
   };
 }
 
@@ -700,6 +757,101 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
 
   const totalTimeDeltaSec = course1.totalDurationSec - course2.totalDurationSec;
 
+  // Calculate waypoint checkpoint comparisons if reference course has waypoints
+  let waypointSplits: WaypointComparison[] | undefined = undefined;
+  if (course1.waypoints && course1.waypoints.length > 0) {
+    waypointSplits = course1.waypoints.map((wp) => {
+      const p1 = getPointAtDist(refPts, wp.km);
+      const plannedTimeSec = wp.plannedTimeSec ?? p1.elapsedSec;
+
+      const candKm = Math.min(totalDist2, wp.km * (totalDist2 / Math.max(0.1, totalDist1)));
+      const p2 = getPointAtDist(candPts, candKm);
+      const actualTimeSec = p2.elapsedSec;
+
+      const deltaSec = Math.round(plannedTimeSec - actualTimeSec); // >0: ahead, <0: behind
+
+      // Estimate actual pause time around this waypoint (within 250m) where speed < 1.8 km/h
+      let actualPauseSec = 0;
+      for (let i = 1; i < candPts.length; i++) {
+        const pt = candPts[i];
+        if (Math.abs(pt.distKm - candKm) <= 0.25) {
+          const prevPt = candPts[i - 1];
+          if ((pt.speedKmH ?? 10) < 1.8) {
+            actualPauseSec += Math.max(0, pt.elapsedSec - prevPt.elapsedSec);
+          }
+        }
+      }
+
+      return {
+        id: wp.id,
+        name: wp.name,
+        km: wp.km,
+        ele: wp.ele,
+        type: wp.type || 'ravito',
+        plannedTimeSec,
+        actualTimeSec,
+        deltaSec,
+        plannedPauseMin: wp.pauseMin || 0,
+        actualPauseSec: actualPauseSec > 0 ? actualPauseSec : undefined,
+        cutoffTime: wp.cutoffTime,
+      };
+    });
+  }
+
+  // Calculate Pacing Analysis breakdown (Uphill / Downhill / Flat / Adherence)
+  let uphillDeltaSec = 0;
+  let downhillDeltaSec = 0;
+  let flatDeltaSec = 0;
+
+  kmSplits.forEach((sp) => {
+    if (sp.grade > 3) {
+      uphillDeltaSec += sp.gain_s;
+    } else if (sp.grade < -3) {
+      downhillDeltaSec += sp.gain_s;
+    } else {
+      flatDeltaSec += sp.gain_s;
+    }
+  });
+
+  // Calculate actual stopped time across entire candidate course (speed < 1.5 km/h)
+  let stoppedTimeActualSec = 0;
+  for (let i = 1; i < candPts.length; i++) {
+    const pt = candPts[i];
+    const prevPt = candPts[i - 1];
+    if ((pt.speedKmH ?? 10) < 1.5) {
+      stoppedTimeActualSec += Math.max(0, pt.elapsedSec - prevPt.elapsedSec);
+    }
+  }
+
+  let stoppedTimePlannedSec = 0;
+  if (course1.waypoints) {
+    course1.waypoints.forEach((wp) => {
+      if (wp.pauseMin) stoppedTimePlannedSec += wp.pauseMin * 60;
+    });
+  }
+
+  // Adherence score: consistency of speed ratio vs reference
+  let ratioVarianceSum = 0;
+  let splitCount = 0;
+  kmSplits.forEach((sp) => {
+    if (sp.spd22 > 0 && sp.spd26 > 0) {
+      const ratio = sp.spd26 / sp.spd22;
+      ratioVarianceSum += Math.abs(ratio - 1.0);
+      splitCount++;
+    }
+  });
+  const avgDev = splitCount > 0 ? ratioVarianceSum / splitCount : 0.15;
+  const adherenceScore = Math.max(45, Math.min(99, Math.round(100 - avgDev * 95)));
+
+  const pacingAnalysis: PacingAnalysis = {
+    adherenceScore,
+    uphillDeltaSec,
+    downhillDeltaSec,
+    flatDeltaSec,
+    stoppedTimeActualSec,
+    stoppedTimePlannedSec,
+  };
+
   // Generate notable landmark annotations
   const notes: { km: number; min: number; txt: string; dy: number }[] = [];
   if (dualPts.length > 5) {
@@ -743,6 +895,8 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
     maxErrorKm,
     totalTimeDeltaSec,
     notes,
+    waypointSplits,
+    pacingAnalysis,
   };
 }
 

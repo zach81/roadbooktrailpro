@@ -392,6 +392,53 @@ export default function CourseComparatorMap({
       );
       markersGroup.addLayer(summitMarker);
     }
+
+    // Roadbook Waypoints & Aid Stations (Ravitos, Cols, Postes)
+    if (course1?.waypoints && course1.waypoints.length > 0) {
+      course1.waypoints.forEach((wp) => {
+        // Skip extreme boundaries handled by Start/Finish
+        if (wp.km < 0.2 || wp.km > (course1.totalDistanceKm - 0.2)) return;
+
+        let iconEmoji = '📍';
+        if (wp.type === 'food' || wp.type === 'ravito') iconEmoji = '🥪';
+        else if (wp.type === 'water') iconEmoji = '💧';
+        else if (wp.type === 'peak') iconEmoji = '⛰️';
+
+        const lat = wp.lat ?? dualPts.find((p) => p[0] >= wp.km)?.[1] ?? dualPts[0][1];
+        const lon = wp.lon ?? dualPts.find((p) => p[0] >= wp.km)?.[2] ?? dualPts[0][2];
+
+        const aidIcon = L.divIcon({
+          className: 'comparator-aid-badge',
+          html: `${iconEmoji} ${wp.name}`,
+          iconSize: [120, 22],
+          iconAnchor: [60, 11],
+        });
+
+        const aidMarker = L.marker([lat, lon], { icon: aidIcon });
+        const timeStr = wp.plannedTimeSec ? fmtTime(wp.plannedTimeSec) : '';
+        const pauseStr = wp.pauseMin ? `<br/>Pause prévue : ${wp.pauseMin} min` : '';
+        const cutoffStr = wp.cutoffTime ? `<br/>Barrière horaire : ${wp.cutoffTime}` : '';
+
+        aidMarker.bindPopup(
+          `<strong>${wp.name}</strong><br/>Km ${wp.km.toFixed(1)} • ${Math.round(wp.ele)}m${timeStr ? `<br/>Horaire prévu : ${timeStr}` : ''}${pauseStr}${cutoffStr}`
+        );
+
+        aidMarker.on('click', () => {
+          let closestIdx = 0;
+          let minD = Infinity;
+          dualPts.forEach((p, idx) => {
+            const d = Math.abs(p[0] - wp.km);
+            if (d < minD) {
+              minD = d;
+              closestIdx = idx;
+            }
+          });
+          onSelectPoint(closestIdx);
+        });
+
+        markersGroup.addLayer(aidMarker);
+      });
+    }
   }, [dualPts, mapMode, course1, course2, peakIdx, peakAlt, onSelectPoint]);
 
   // 4. Create and update Active Virtual Partner Runner markers (T1 and T2)

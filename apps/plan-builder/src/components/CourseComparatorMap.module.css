@@ -333,3 +333,27 @@
   transform: translate(-50%, -50%);
   user-select: none;
 }
+
+:global(.comparator-aid-badge) {
+  background: #0284c7;
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 800;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  user-select: none;
+  transition: transform 0.15s;
+}
+
+:global(.comparator-aid-badge:hover) {
+  transform: translate(-50%, -50%) scale(1.1);
+  background: #0369a1;
+}
