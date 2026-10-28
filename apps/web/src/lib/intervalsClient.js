@@ -9,7 +9,12 @@
  *   Agilité Descente, Résistance Fatigue, Archétype).
  */
 
-import { deriveConfigFromITRA } from './roadbookCalculator';
+import {
+  deriveConfigFromITRA,
+  calculateEmpiricalItraFromPerformance,
+  estimateRaceTargetHours,
+  getReferenceSpeed1000Itra,
+} from './roadbookCalculator';
 
 const BASE_URL = 'https://intervals.icu/api/v1';
 
@@ -208,8 +213,7 @@ export async function profileAthleteFromIntervalsRaces(
       const ke = distKm + eleM / 100;
       const sec = a.elapsed_time > a.moving_time ? a.elapsed_time : (a.moving_time || 3600);
       const h = Math.max(0.25, sec / 3600);
-      const corr = 1 + Math.max(0, Math.log10(Math.max(1, h)) * 0.14);
-      const empiricalItra = Math.max(280, Math.min(920, Math.round((((ke / h) * corr) / 21.0) * 1000)));
+      const empiricalItra = calculateEmpiricalItraFromPerformance(distKm, eleM, h, !isExplicit);
       return {
         ...a,
         isExplicitCourseTitle: isExplicit,
@@ -217,6 +221,7 @@ export async function profileAthleteFromIntervalsRaces(
         empiricalItra,
         distKm,
         eleM,
+        ke,
       };
     });
 
@@ -224,17 +229,17 @@ export async function profileAthleteFromIntervalsRaces(
   let usedFallbackLongRuns = false;
 
   if (raceActs.length === 0) {
-    // Fallback intelligent sur les sorties longues trail (> 12 km) si aucune sortie n'est intitulée "Course"
+    // Fallback intelligent sur les sorties longues trail (> 14 km) si aucune sortie n'est intitulée "Course"
     raceActs = enriched
-      .filter((a) => a.distKm >= 12)
-      .sort((a, b) => (b.empiricalItra || 0) - (a.empiricalItra || 0))
+      .filter((a) => a.distKm >= 14)
+      .sort((a, b) => (b.ke || 0) - (a.ke || 0))
       .slice(0, 6);
     usedFallbackLongRuns = true;
   }
 
   if (raceActs.length === 0) {
     throw new Error(
-      "Aucune sortie 'Course' ni sortie longue (> 12 km) trouvée sur les 12 derniers mois dans Intervals.icu."
+      "Aucune sortie 'Course' ni sortie longue (> 14 km) trouvée sur les 12 derniers mois dans Intervals.icu."
     );
   }
 
@@ -252,10 +257,19 @@ export async function profileAthleteFromIntervalsRaces(
 
   for (const act of raceActs) {
     const itra = act.empiricalItra || 500;
-    const w = act.isExplicitCourseTitle ? 2.5 : 1.0;
+    // Pondération par pertinence :
+    // - x2.5 si explicitement marqué "Course" / Race
+    // - Bonus pour les vrais trails (>25 ke et >30m D+/km) afin que les 10 km sur route plats ne gonflent pas la cote ITRA trail
+    const trailRelevance = (act.ke >= 28 ? 1.35 : act.ke >= 18 ? 1.0 : 0.65) * ((act.eleM / Math.max(1, act.distKm)) >= 30 ? 1.25 : 0.85);
+    let w = (act.isExplicitCourseTitle ? 2.5 : 1.0) * trailRelevance;
+    if (targetDistanceKm && targetDistanceKm > 0) {
+      const distDiffRatio = Math.abs(act.distKm - targetDistanceKm) / Math.max(12, targetDistanceKm);
+      if (distDiffRatio < 0.35) w *= 1.5;
+    }
+
     weightedItraSum += itra * w;
     totalWeight += w;
-    if (itra > peakItra) peakItra = itra;
+    if (itra > peakItra && act.ke >= 18) peakItra = itra;
 
     const moving = act.moving_time || act.elapsed_time || 3600;
     const elapsed = Math.max(moving, act.elapsed_time || moving);
@@ -284,7 +298,9 @@ export async function profileAthleteFromIntervalsRaces(
   }
 
   const avgItra = Math.round(weightedItraSum / (totalWeight || 1));
-  const blendedItra = Math.round(avgItra * 0.72 + peakItra * 0.28);
+  if (!peakItra) peakItra = avgItra;
+  // On privilégie la moyenne pondérée réelle (90%) plutôt que le pic isolé (10%) pour ne jamais surévaluer la cote ITRA
+  const blendedItra = Math.round(avgItra * 0.90 + peakItra * 0.10);
   const meanStopRatio = weightedStopRatio / (totalWeight || 1);
   const meanDecoupling = decouplingWeight > 0 ? weightedDecoupling / decouplingWeight : 6.5;
   const meanVertRatio = avgVertRatio / (totalWeight || 1);
@@ -486,19 +502,23 @@ export async function profileAthleteFromIntervalsRaces(
     runnerArchetype = 'Diesel Ultra-Endurant';
   }
 
-  // Estimation optionnelle sur le parcours Roadbook actif
+  // Estimation optionnelle sur le parcours Roadbook actif via le modèle non-linéaire ITRA/Riegel
   let estimatedTargetHours = null;
   let estimatedTargetFormatted = null;
   if (targetDistanceKm && targetDistanceKm > 0) {
-    const ele = targetElevationGainM || 0;
-    const rbKe = targetDistanceKm + ele / upCostDivider + (ele / 160) * downCostModifier;
-    const flatSpd = (blendedItra / 1000) * 21.0;
-    const estRunningH = (rbKe / Math.max(4, flatSpd)) * (1 + (fatiguePercent / 100) * 0.52);
-    const totalPausesH = (pauseMinutesTotal || 0) / 60;
-    estimatedTargetHours = Number((estRunningH + totalPausesH).toFixed(2));
+    estimatedTargetHours = estimateRaceTargetHours({
+      distanceKm: targetDistanceKm,
+      elevationGainM: targetElevationGainM || 0,
+      itraIndex: blendedItra,
+      fatiguePercent,
+      upCostDivider,
+      downCostModifier,
+      pauseMinutesTotal: pauseMinutesTotal || 0,
+      paceProfile: 'coach',
+    });
     const h = Math.floor(estimatedTargetHours);
     const m = Math.round((estimatedTargetHours - h) * 60);
-    estimatedTargetFormatted = `${h}h${m < 10 ? `0${m}` : m}`;
+    estimatedTargetFormatted = m === 60 ? `${h + 1}h00` : `${h}h${m < 10 ? `0${m}` : m}`;
   }
 
   return {

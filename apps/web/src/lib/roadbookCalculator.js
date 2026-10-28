@@ -452,23 +452,30 @@ export function generateSegments(
     ? new Date(startTimeStr).getTime()
     : new Date().setHours(8, 0, 0, 0);
 
-  const F = (fatiguePercent || 0);
-  const { flatSpeedKmh } = estimateBasePaces(itraIndex);
-
-  // Effort total pour calculer le facteur de fatigue exponentiel
+  // Effort total pour calculer le facteur de fatigue exponentiel et la vitesse de référence sur la distance
   const E = rawSegments.reduce((acc, seg) => acc + seg.kmEffort, 0.001);
+  const totalStandardKe = rawSegments.reduce((acc, seg) => acc + seg.distance + seg.elevationPos / 100, 0.001);
+
+  // En ultra-distance (> 65 km-effort), la dérive musculaire et la perte de vitesse en fin de course
+  // augmentent naturellement par rapport à un 30-50 km : on module la pente de fatigue sur les ultras.
+  const ultraFatigueScale = totalStandardKe > 65 ? 1 + Math.min(0.65, (totalStandardKe - 65) / 180) : 1.0;
+  const F = Math.min(60, (fatiguePercent || 0) * ultraFatigueScale);
+  const { flatSpeedKmh } = estimateBasePaces(itraIndex, totalStandardKe);
+
   let currentX = 0;
 
   // Calcul du temps de base (sans fatigue) pour chaque segment, et avec fatigue
   const segmentsBase = rawSegments.map(seg => {
-    // Le temps de base découle de l'Index ITRA, qui a été calibré sur la formule STANDARD ITRA
+    // Le temps de base utilise le kmEffort personnalisé du segment (tenant compte de upCostDivider et downCostModifier)
+    // normalisé pour que les grimpeurs gagnent du temps dans les bosses et les descendeurs dans les descentes.
     const standardKmEffort = seg.distance + (seg.elevationPos / 100);
+    const blendedSegEffort = standardKmEffort * 0.45 + seg.kmEffort * 0.55;
     
     // Application de la technicité sur le segment
     const technicalityLevel = seg.to.technicality || 2;
     const terrainFactor = getTerrainFactor(technicalityLevel);
     
-    const freshHours = standardKmEffort / flatSpeedKmh;
+    const freshHours = blendedSegEffort / flatSpeedKmh;
     const paceProfileFactor = paceProfile === 'aggressive' ? 0.95 : 1.0;
     // On applique le terrainFactor et le profil d'allure ici !
     const freshMs = freshHours * 3600000 * terrainFactor * paceProfileFactor;
@@ -528,18 +535,35 @@ export function generateSegments(
     cumulMsPass1 += segFinalMs + pauseMs;
   }
 
+  // Si l'utilisateur n'a pas saisi d'objectif manuel, on utilise l'estimation physiologique calibrée (estimateRaceTargetHours)
+  const totalDistCalc = rawSegments.reduce((acc, s) => acc + s.distance, 0);
+  const totalEleCalc = rawSegments.reduce((acc, s) => acc + s.elevationPos, 0);
+  const effectiveTargetTimeH = targetTimeH || estimateRaceTargetHours({
+    distanceKm: totalDistCalc,
+    elevationGainM: totalEleCalc,
+    itraIndex,
+    fatiguePercent,
+    upCostDivider,
+    downCostModifier,
+    pauseMinutesTotal: totalPauseMs / 60000,
+    paceProfile
+  });
+
   let fastRatio = totalPredictedOverrideMs > 0 ? (totalOverrideMs / totalPredictedOverrideMs) : 1.0;
   let slowRatio = totalPredictedOverrideMs > 0 ? (totalOverrideMs / totalPredictedOverrideMs) : 1.0;
 
-  if (targetTimeH) {
-    const targetFastMs = targetTimeH * 3600000;
+  if (effectiveTargetTimeH) {
+    const targetFastMs = effectiveTargetTimeH * 3600000;
     const remainingTargetFastMs = targetFastMs - totalOverrideMs - totalPauseMs;
     fastRatio = (totalPredictedMs - totalPredictedOverrideMs > 0)
-      ? Math.max(0, remainingTargetFastMs / (totalPredictedMs - totalPredictedOverrideMs))
+      ? Math.max(0.1, remainingTargetFastMs / (totalPredictedMs - totalPredictedOverrideMs))
       : 1.0;
   }
   
-  slowRatio = fastRatio * 1.20;
+  // Marge Rapide / Lent dynamique : ~10% sur formats 30-50K (au lieu de +20% qui donnait des temps ultra-conservateurs),
+  // progressant jusqu'à ~16% sur les grands ultras (>120 ke) où l'aléa de fin de course est plus grand.
+  const slowSpread = totalStandardKe <= 65 ? 1.10 : Math.min(1.17, 1.10 + ((totalStandardKe - 65) / 150) * 0.07);
+  slowRatio = fastRatio * slowSpread;
 
   // Passe 2 : Calcul final avec application de l'ajustement global
   let cumulMsFast = startTime;
@@ -667,14 +691,114 @@ function computeWalkThreshold(x, E, fatiguePercent, baseThresholdPercent = 12) {
 }
 
 // ─────────────────────────────────────────────────────────────
-export function estimateBasePaces(utmbIndex) {
+/**
+ * Retourne la vitesse de référence 1000 ITRA (en km-effort / heure)
+ * selon le volume du parcours (km-effort = km + D+/100).
+ * Loi de puissance physiologique Riegel / ITRA (exposant d'endurance ~1.115) :
+ * - 25 ke (Trail Court) : ~19.7 ke/h
+ * - 50 ke (Marathon / 50K) : ~18.1 ke/h
+ * - 75 ke (50K Montagne / 70K) : ~17.3 ke/h
+ * - 115 ke (100K / CCC) : ~16.5 ke/h
+ * - 270 ke (100M / UTMB) : ~14.9 ke/h
+ */
+export function getReferenceSpeed1000Itra(kmEffort) {
+  const safeKe = Math.max(12, kmEffort || 40);
+  return 24.0 * Math.pow(safeKe, -0.068) * 1.03;
+}
+
+/**
+ * Calcule la cote ITRA empirique d'une course réalisée à partir de sa distance (km),
+ * de son dénivelé positif (m) et de son temps total (heures, pauses incluses).
+ * Intègre un abattement terrain trail (technicité, relances) sur les formats courts.
+ */
+export function calculateEmpiricalItraFromPerformance(distanceKm, elevationGainM, elapsedHours, isTrainingFallback = false) {
+  if (!distanceKm || distanceKm < 3 || !elapsedHours || elapsedHours <= 0.15) return 500;
+  const ke = distanceKm + (elevationGainM || 0) / 100;
+  const vRef1000 = getReferenceSpeed1000Itra(ke);
+  const actualSpeedKeH = ke / elapsedHours;
+
+  // Sur les distances courtes (<45 ke) ou roulantes (<25 m D+/km), la vitesse brute en ke/h
+  // donne structurellement un score trop haut si on ne corrige pas la technicité / densité d'effort.
+  const vertDensity = (elevationGainM || 0) / Math.max(1, distanceKm);
+  const shortBonusDiscount = ke < 45 ? 0.93 + (ke / 45) * 0.05 : 0.98;
+  const flatBonusDiscount = vertDensity < 25 ? 0.94 : vertDensity < 45 ? 0.97 : 1.0;
+  // Si c'est une sortie longue d'entraînement (sans dossard), on ne surestime pas mais on ajuste légèrement
+  const trainingFactor = isTrainingFallback ? 0.96 : 1.0;
+
+  const rawItra = (actualSpeedKeH / vRef1000) * 1000 * shortBonusDiscount * flatBonusDiscount * trainingFactor;
+  return Math.max(250, Math.min(940, Math.round(rawItra)));
+}
+
+/**
+ * Estime le temps global de course (en heures décimales) pour un parcours donné
+ * en fonction de la cote ITRA du coureur, de ses aptitudes et de la distance.
+ * Corrige les 2 biais classiques :
+ * - Pas d'empilement excessif sur 40-60 km (50K réaliste et dynamique)
+ * - Courbe d'ultra-endurance non-linéaire au-delà de 65 km-effort (100K / 100M réalistes, non sur-agressifs)
+ */
+export function estimateRaceTargetHours({
+  distanceKm,
+  elevationGainM,
+  itraIndex,
+  fatiguePercent = 20,
+  upCostDivider = 88,
+  downCostModifier = 1.0,
+  pauseMinutesTotal = 0,
+  paceProfile = 'coach'
+}) {
+  const safeDist = Math.max(1, parseFloat(distanceKm) || 20);
+  const safeEle = Math.max(0, parseFloat(elevationGainM) || 0);
+  const safeItra = Math.max(250, Math.min(950, parseFloat(itraIndex) || 550));
+
+  const standardKe = safeDist + safeEle / 100;
+  const vRef1000 = getReferenceSpeed1000Itra(standardKe);
+
+  // Vitesse moyenne ke/h théorique d'un coureur de cet index ITRA sur ce volume de course
+  let runnerKeSpeed = (safeItra / 1000) * vRef1000;
+
+  // Modulation fine selon les aptitudes spécifiques Montée / Descente du coureur par rapport au standard (upCostDivider=90, downCost=0.95)
+  const vertRatio = safeEle / safeDist; // m D+ / km
+  const upAptitudeRatio = (parseFloat(upCostDivider) || 88) / 90; // >1 si meilleur grimpeur
+  const downAptitudeRatio = 1.0 - ((parseFloat(downCostModifier) || 0.95) - 0.95) * 0.18; // >1 si agile en descente
+  const terrainWeight = Math.min(1, vertRatio / 60);
+  const aptitudeMultiplier = 1 + terrainWeight * ((upAptitudeRatio - 1) * 0.45 + (downAptitudeRatio - 1) * 0.35);
+  runnerKeSpeed *= Math.max(0.82, Math.min(1.18, aptitudeMultiplier));
+
+  // Modulation selon la résistance à la fatigue du coureur par rapport à la fatigue attendue pour son ITRA
+  const expectedFatigueForItra = Math.round(45 - ((safeItra - 200) / 800) * 30);
+  const fatigueDelta = (parseFloat(fatiguePercent) || expectedFatigueForItra) - expectedFatigueForItra;
+  const fatigueAdjustment = 1 + (fatigueDelta / 100) * 0.32;
+
+  // Facteur de dégradation ultra-distance (> 65 km-effort) :
+  // En ultra, les coureurs amateurs (ITRA < 680) subissent une dérive musculaire, digestive et nocturne
+  // beaucoup plus marquée que les élites (ITRA 850+) qui courent 100 km en <10h de jour.
+  let ultraDriftMultiplier = 1.0;
+  if (standardKe > 65) {
+    const ultraExcess = (standardKe - 65) / 100; // ex: +0.50 sur un 115 ke (75km/4000m+), +1.85 sur un UTMB (250 ke)
+    const amateurFactor = Math.max(0.25, Math.min(1.45, (820 - safeItra) / 350));
+    ultraDriftMultiplier = 1 + Math.pow(ultraExcess, 1.15) * 0.24 * amateurFactor;
+  }
+
+  const profileFactor = paceProfile === 'aggressive' ? 0.96 : 1.0;
+  const runningHours = (standardKe / Math.max(3.2, runnerKeSpeed)) * fatigueAdjustment * ultraDriftMultiplier * profileFactor;
+
+  // Pauses aux ravitaillements : si l'utilisateur n'a pas saisi de pauses sur un ultra (>65 ke),
+  // inclure un forfait physiologique minimal de ravitaillement/base de vie
+  let effectivePauseHours = (parseFloat(pauseMinutesTotal) || 0) / 60;
+  if (effectivePauseHours < 0.05 && standardKe > 65) {
+    effectivePauseHours = ((standardKe - 55) / 25) * 0.12; // ~15-20 min sur 100K, ~45-60 min sur 100M
+  }
+
+  return Number(Math.max(0.25, runningHours + effectivePauseHours).toFixed(2));
+}
+
+export function estimateBasePaces(utmbIndex, totalKmEffort = 45) {
   const index = Math.max(200, Math.min(1000, utmbIndex || 600));
-  
-  // Modèle officiel ITRA : la vitesse est directement proportionnelle à la cote ITRA.
-  // Un coureur ITRA 1000 a une vitesse équivalente plat d'environ 21.0 km/h (record du monde marathon ~2h00)
-  const flatSpeedKmh = (index / 1000) * 21.0;
+  const vRef1000 = getReferenceSpeed1000Itra(totalKmEffort);
+  // Vitesse fraîche en début d'épreuve (avant application de l'intégrale de fatigue sur les segments)
+  const flatSpeedKmh = (index / 1000) * vRef1000 * 1.08;
   const flatPaceMinKm = 60 / flatSpeedKmh;
-  const vam = flatSpeedKmh * 100; // Approximation VAM = Vitesse Plat * 100
+  const vam = flatSpeedKmh * 95;
 
   return { vam, flatPaceMinKm, flatSpeedKmh };
 }

@@ -1,7 +1,11 @@
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { ParsedCourse, TrackPoint, CourseWaypoint, ComparisonResult, haversineDistance } from './courseParser';
-import { RaceCalibrationProfile } from './intervalsApi';
+import {
+  RaceCalibrationProfile,
+  calculateEmpiricalItraFromPerformance,
+  estimateRaceTargetHoursForCourse,
+} from './intervalsApi';
 
 export interface RoadbookWaypoint {
   id?: string;
@@ -272,8 +276,21 @@ export function convertRoadbookToParsedCourse(
     }
   });
 
-  if (targetTimeSetting && targetTimeSetting > 0) {
-    const targetTotalSec = targetTimeSetting * 3600;
+  const effectiveTargetHours =
+    targetTimeSetting && targetTimeSetting > 0
+      ? targetTimeSetting
+      : estimateRaceTargetHoursForCourse({
+          distanceKm: Number(roadbook.officialDistance) || totalDistKm,
+          elevationGainM: Number(roadbook.officialElevation) || totalGainM,
+          itraIndex: itra,
+          fatiguePercent: roadbook.fatiguePercent ?? 15,
+          upCostDivider,
+          downCostModifier,
+          pauseMinutesTotal: totalPlannedPauseSec / 60,
+        });
+
+  if (effectiveTargetHours && effectiveTargetHours > 0) {
+    const targetTotalSec = effectiveTargetHours * 3600;
     const targetRunningSec = Math.max(1800, targetTotalSec - totalPlannedPauseSec);
     if (totalCalculatedDurationSec > 0) {
       timeScaleFactor = targetRunningSec / totalCalculatedDurationSec;
@@ -623,15 +640,10 @@ export function computeRoadbookRetroSync(
   const distKm = c2.totalDistanceKm || c1.totalDistanceKm || 20;
   const eleGainM = c2.elevationGainM || c1.elevationGainM || 500;
   const kmEffort = distKm + eleGainM / 100;
-  const stoppedSec = pa?.stoppedTimeActualSec || 0;
-  const movingHours = Math.max(0.25, (c2.totalDurationSec - stoppedSec * 0.5) / 3600);
-  const durationCorrection = 1 + Math.max(0, Math.log10(Math.max(1, movingHours)) * 0.14);
-  const observedItra = Math.max(
-    280,
-    Math.min(930, Math.round((((kmEffort / movingHours) * durationCorrection) / 21.0) * 1000))
-  );
+  const elapsedHours = Math.max(0.25, c2.totalDurationSec / 3600);
+  const observedItra = calculateEmpiricalItraFromPerformance(distKm, eleGainM, elapsedHours, false);
   const oldItraIndex = Number(roadbook.itraIndex) || 560;
-  // Lissage pondéré (70% performance réelle du jour, 30% index initial) pour éviter les valeurs aberrantes
+  // Lissage pondéré (75% performance réelle du jour, 25% index initial)
   const newItraIndex = Math.round(observedItra * 0.75 + oldItraIndex * 0.25);
 
   // 2. Modulation de la Fatigue (%) et de la Stratégie de Pacing selon la dérive 1ère vs 2ème moitié

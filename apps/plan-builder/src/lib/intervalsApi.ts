@@ -785,6 +785,86 @@ export function detectRaceActivity(act: {
   return { isRace, isExplicitCourseTitle };
 }
 
+/**
+ * Vitesse de référence 1000 ITRA (en km-effort / heure) selon le volume (km + D+/100).
+ * Loi de puissance physiologique Riegel / ITRA.
+ */
+export function getReferenceSpeed1000Itra(kmEffort: number): number {
+  const safeKe = Math.max(12, kmEffort || 40);
+  return 24.0 * Math.pow(safeKe, -0.068) * 1.03;
+}
+
+/**
+ * Calcule la cote ITRA empirique d'une course ou sortie sans surévaluation sur le court/plat.
+ */
+export function calculateEmpiricalItraFromPerformance(
+  distanceKm: number,
+  elevationGainM: number,
+  elapsedHours: number,
+  isTrainingFallback: boolean = false
+): number {
+  if (!distanceKm || distanceKm < 3 || !elapsedHours || elapsedHours <= 0.15) return 500;
+  const ke = distanceKm + (elevationGainM || 0) / 100;
+  const vRef1000 = getReferenceSpeed1000Itra(ke);
+  const actualSpeedKeH = ke / elapsedHours;
+
+  const vertDensity = (elevationGainM || 0) / Math.max(1, distanceKm);
+  const shortBonusDiscount = ke < 45 ? 0.93 + (ke / 45) * 0.05 : 0.98;
+  const flatBonusDiscount = vertDensity < 25 ? 0.94 : vertDensity < 45 ? 0.97 : 1.0;
+  const trainingFactor = isTrainingFallback ? 0.96 : 1.0;
+
+  const rawItra = (actualSpeedKeH / vRef1000) * 1000 * shortBonusDiscount * flatBonusDiscount * trainingFactor;
+  return Math.max(250, Math.min(940, Math.round(rawItra)));
+}
+
+/**
+ * Estime le temps global de course (en heures décimales) pour un parcours donné
+ * sans être trop conservateur sur les 50K ni trop agressif sur les ultras (100K / 100M).
+ */
+export function estimateRaceTargetHoursForCourse(params: {
+  distanceKm: number;
+  elevationGainM: number;
+  itraIndex: number;
+  fatiguePercent?: number;
+  upCostDivider?: number;
+  downCostModifier?: number;
+  pauseMinutesTotal?: number;
+}): number {
+  const safeDist = Math.max(1, Number(params.distanceKm) || 20);
+  const safeEle = Math.max(0, Number(params.elevationGainM) || 0);
+  const safeItra = Math.max(250, Math.min(950, Number(params.itraIndex) || 550));
+
+  const standardKe = safeDist + safeEle / 100;
+  const vRef1000 = getReferenceSpeed1000Itra(standardKe);
+  let runnerKeSpeed = (safeItra / 1000) * vRef1000;
+
+  const vertRatio = safeEle / safeDist;
+  const upAptitudeRatio = (Number(params.upCostDivider) || 88) / 90;
+  const downAptitudeRatio = 1.0 - ((Number(params.downCostModifier) || 0.95) - 0.95) * 0.18;
+  const terrainWeight = Math.min(1, vertRatio / 60);
+  const aptitudeMultiplier = 1 + terrainWeight * ((upAptitudeRatio - 1) * 0.45 + (downAptitudeRatio - 1) * 0.35);
+  runnerKeSpeed *= Math.max(0.82, Math.min(1.18, aptitudeMultiplier));
+
+  const expectedFatigueForItra = Math.round(45 - ((safeItra - 200) / 800) * 30);
+  const fatigueDelta = (Number(params.fatiguePercent) || expectedFatigueForItra) - expectedFatigueForItra;
+  const fatigueAdjustment = 1 + (fatigueDelta / 100) * 0.32;
+
+  let ultraDriftMultiplier = 1.0;
+  if (standardKe > 65) {
+    const ultraExcess = (standardKe - 65) / 100;
+    const amateurFactor = Math.max(0.25, Math.min(1.45, (820 - safeItra) / 350));
+    ultraDriftMultiplier = 1 + Math.pow(ultraExcess, 1.15) * 0.24 * amateurFactor;
+  }
+
+  const runningHours = (standardKe / Math.max(3.2, runnerKeSpeed)) * fatigueAdjustment * ultraDriftMultiplier;
+  let effectivePauseHours = (Number(params.pauseMinutesTotal) || 0) / 60;
+  if (effectivePauseHours < 0.05 && standardKe > 65) {
+    effectivePauseHours = ((standardKe - 55) / 25) * 0.12;
+  }
+
+  return Number(Math.max(0.25, runningHours + effectivePauseHours).toFixed(2));
+}
+
 export interface RaceCalibrationProfile {
   racesCount: number;
   explicitCoursesCount: number;
@@ -867,19 +947,20 @@ export function analyzeRaceActivitiesForCalibration(
     const totalSec = act.elapsed_time > act.moving_time ? act.elapsed_time : act.moving_time;
     const movingSec = act.moving_time || totalSec;
     const hoursTotal = Math.max(0.25, totalSec / 3600);
-    const speedKmEffortH = kmEffort / hoursTotal;
-
-    // Formule ITRA empirique : Vitesse km-effort/h rapportée à l'échelle ITRA (1000 = 21.0 ke/h, avec ajustement d'endurance)
-    const durationCorrection = 1 + Math.max(0, Math.log10(Math.max(1, hoursTotal)) * 0.14);
-    const rawItra = Math.round(((speedKmEffortH * durationCorrection) / 21.0) * 1000);
-    const empiricalItra = Math.max(280, Math.min(920, rawItra));
+    const empiricalItra = calculateEmpiricalItraFromPerformance(
+      distKm,
+      eleM,
+      hoursTotal,
+      !act.isExplicitCourseTitle
+    );
 
     const stopSec = Math.max(0, totalSec - movingSec);
     const stopRatio = totalSec > 0 ? stopSec / totalSec : 0;
     const dplusPerKm = distKm > 0 ? eleM / distKm : 0;
 
-    // Pondération : x2.5 si le titre contient explicitement "Course", et bonus si le profil (km/D+) est proche du roadbook cible
-    let w = act.isExplicitCourseTitle ? 2.5 : 1.0;
+    // Pondération : x2.5 si le titre contient explicitement "Course", bonus pour les vrais trails (>25 ke et >30m D+/km)
+    const trailRelevance = (kmEffort >= 28 ? 1.35 : kmEffort >= 18 ? 1.0 : 0.65) * (dplusPerKm >= 30 ? 1.25 : 0.85);
+    let w = (act.isExplicitCourseTitle ? 2.5 : 1.0) * trailRelevance;
     if (roadbookDistanceKm && roadbookDistanceKm > 0) {
       const distDiffRatio = Math.abs(distKm - roadbookDistanceKm) / Math.max(10, roadbookDistanceKm);
       if (distDiffRatio < 0.35) w *= 1.6;
@@ -955,15 +1036,20 @@ export function analyzeRaceActivitiesForCalibration(
 
   if (roadbookDistanceKm && roadbookDistanceKm > 0) {
     const rbEle = roadbookElevationGainM || 0;
-    const rbKmEffort = roadbookDistanceKm + rbEle / recommendedUpCostDivider + (rbEle / 160) * recommendedDownCostModifier;
-    const baseHours = rbKmEffort / Math.max(4, flatSpeedKmh);
-    const fatigueMult = 1 + (recommendedFatiguePercent / 100) * 0.52;
-    const pausesH = ((roadbookWaypointsCount || Math.floor(roadbookDistanceKm / 12)) * 4.5) / 60;
-    const totalEstH = Number((baseHours * fatigueMult + pausesH).toFixed(2));
+    const pausesMin = (roadbookWaypointsCount || Math.floor(roadbookDistanceKm / 12)) * 4.0;
+    const totalEstH = estimateRaceTargetHoursForCourse({
+      distanceKm: roadbookDistanceKm,
+      elevationGainM: rbEle,
+      itraIndex: avgEmpiricalItra,
+      fatiguePercent: recommendedFatiguePercent,
+      upCostDivider: recommendedUpCostDivider,
+      downCostModifier: recommendedDownCostModifier,
+      pauseMinutesTotal: pausesMin,
+    });
     estimatedTargetHoursForRoadbook = totalEstH;
     const h = Math.floor(totalEstH);
     const m = Math.round((totalEstH % 1) * 60);
-    estimatedTargetFormatted = `${h}h${String(m).padStart(2, '0')}`;
+    estimatedTargetFormatted = m === 60 ? `${h + 1}h00` : `${h}h${String(m).padStart(2, '0')}`;
   }
 
   return {
@@ -1184,17 +1270,20 @@ export async function calibrateAthleteProfileWithStreams(
 
   if (roadbookDistanceKm && roadbookDistanceKm > 0) {
     const rbEle = roadbookElevationGainM || 0;
-    const rbKmEffort =
-      roadbookDistanceKm + rbEle / recommendedUpCostDivider + (rbEle / 160) * recommendedDownCostModifier;
-    const flatSpd = (baseProfile.avgEmpiricalItra / 1000) * 21.0;
-    const baseHours = rbKmEffort / Math.max(4, flatSpd);
-    const fatigueMult = 1 + (recommendedFatiguePercent / 100) * 0.52;
-    const pausesH = ((roadbookWaypointsCount || Math.floor(roadbookDistanceKm / 12)) * 4.5) / 60;
-    const totalEstH = Number((baseHours * fatigueMult + pausesH).toFixed(2));
+    const pausesMin = (roadbookWaypointsCount || Math.floor(roadbookDistanceKm / 12)) * 4.0;
+    const totalEstH = estimateRaceTargetHoursForCourse({
+      distanceKm: roadbookDistanceKm,
+      elevationGainM: rbEle,
+      itraIndex: baseProfile.avgEmpiricalItra,
+      fatiguePercent: recommendedFatiguePercent,
+      upCostDivider: recommendedUpCostDivider,
+      downCostModifier: recommendedDownCostModifier,
+      pauseMinutesTotal: pausesMin,
+    });
     estimatedTargetHoursForRoadbook = totalEstH;
     const h = Math.floor(totalEstH);
     const m = Math.round((totalEstH % 1) * 60);
-    estimatedTargetFormatted = `${h}h${String(m).padStart(2, '0')}`;
+    estimatedTargetFormatted = m === 60 ? `${h + 1}h00` : `${h}h${String(m).padStart(2, '0')}`;
   }
 
   return {
@@ -1259,10 +1348,9 @@ export async function fetchIntervalsActivities(
     const kmEffort = Math.round((distKm + eleM / 100) * 10) / 10;
     const totalSec = (act.elapsed_time && act.elapsed_time > act.moving_time) ? act.elapsed_time : (act.moving_time || 0);
     const hours = totalSec > 0 ? totalSec / 3600 : 0;
-    const durationCorrection = hours > 0 ? 1 + Math.max(0, Math.log10(Math.max(1, hours)) * 0.14) : 1;
     const empiricalItra =
       hours > 0.2 && distKm >= 3
-        ? Math.max(250, Math.min(950, Math.round((((kmEffort / hours) * durationCorrection) / 21.0) * 1000)))
+        ? calculateEmpiricalItraFromPerformance(distKm, eleM, hours, !isExplicitCourseTitle)
         : undefined;
 
     return {

@@ -9,7 +9,7 @@ import dynamic from 'next/dynamic';
 import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, Clock, Navigation, Edit2, Coffee, Plus } from "lucide-react";
 import Link from "next/link";
 import styles from "./editor.module.css";
-import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, calculateKmEffort, formatDecimalHoursToHHMM, deriveConfigFromITRA } from "@/lib/roadbookCalculator";
+import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, calculateKmEffort, formatDecimalHoursToHHMM, deriveConfigFromITRA, estimateRaceTargetHours } from "@/lib/roadbookCalculator";
 import { profileAthleteFromIntervalsRaces } from "@/lib/intervalsClient";
 
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
@@ -742,7 +742,46 @@ export default function RoadbookEditor() {
 
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <div className={styles.paramGroup} style={{ flex: 1, minWidth: '220px' }}>
-              <label className={styles.paramLabel}>Objectif Course</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+                <label className={styles.paramLabel} style={{ margin: 0 }}>Objectif Course</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rawStats = points.length > 0 ? calculateTraceStats(points, 7, 1) : { distance: 20, elevation: { pos: 1000 } };
+                    const rbDist = parseFloat(officialDistance) || rawStats.distance || 20;
+                    const rbEle = parseFloat(officialElevation) || rawStats.elevation.pos || 800;
+                    const totalPauseMins = waypoints.reduce((acc, w) => acc + (parseFloat(w.pause) || 0), 0);
+                    const estH = estimateRaceTargetHours({
+                      distanceKm: rbDist,
+                      elevationGainM: rbEle,
+                      itraIndex: parseFloat(itraIndex) || 560,
+                      fatiguePercent: parseFloat(fatiguePercent) || 20,
+                      upCostDivider: parseFloat(upCostDivider) || 88,
+                      downCostModifier: parseFloat(downCostModifier) || 0.95,
+                      pauseMinutesTotal: totalPauseMins,
+                      paceProfile: paceProfile || 'coach',
+                    });
+                    setTargetTime(estH);
+                    const h = Math.floor(estH);
+                    const m = Math.round((estH - h) * 60);
+                    setTargetHours(h.toString());
+                    setTargetMins(m < 10 ? `0${m}` : m.toString());
+                  }}
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    color: 'var(--color-primary)',
+                    background: 'rgba(255, 90, 54, 0.1)',
+                    border: '1px solid rgba(255, 90, 54, 0.3)',
+                    borderRadius: '6px',
+                    padding: '2px 7px',
+                    cursor: 'pointer',
+                  }}
+                  title="Recalculer l'Objectif Course à partir de votre cote ITRA, de vos aptitudes et de la distance"
+                >
+                  ⚡ Auto-estimer (ITRA)
+                </button>
+              </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input 
                   type="number" 
