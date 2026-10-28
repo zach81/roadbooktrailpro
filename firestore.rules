@@ -70,20 +70,20 @@ service cloud.firestore {
     }
 
     match /coaches/{coachId} {
-      // Accès au document du coach
-      allow read, write: if request.auth != null && request.auth.uid == coachId;
+      // Accès à l'espace Coaching : strictement réservé à un administrateur sur son propre compte
+      allow read, write: if request.auth != null && request.auth.uid == coachId && isAdmin();
       
       // Accès aux sous-collections (athlètes, plans, templates)
       match /athletes/{athleteId} {
-        allow read, write: if request.auth != null && request.auth.uid == coachId;
+        allow read, write: if request.auth != null && request.auth.uid == coachId && isAdmin();
         
         match /plans/{planId} {
-          allow read, write: if request.auth != null && request.auth.uid == coachId;
+          allow read, write: if request.auth != null && request.auth.uid == coachId && isAdmin();
         }
       }
       
       match /templates/{templateId} {
-        allow read, write: if request.auth != null && request.auth.uid == coachId;
+        allow read, write: if request.auth != null && request.auth.uid == coachId && isAdmin();
       }
     }
   }

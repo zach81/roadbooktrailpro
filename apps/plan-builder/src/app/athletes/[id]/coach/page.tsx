@@ -10,7 +10,7 @@ import {
 import { Race, TargetType, ProgressionParams } from '@/types';
 import { fetchAthleteLoad, fetchAthleteEvents } from '@/lib/intervalsApi';
 import { generateMacrocycle, generateWorkoutsForMacrocycle } from '@/lib/trainingEngine';
-import { saveAthletePlan } from '@/lib/firebaseUtils';
+import { saveAthletePlan, getUserIntervalsCredentials } from '@/lib/firebaseUtils';
 import { BarChart, Bar, Cell, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/context/AuthContext';
 import styles from './page.module.css';
@@ -33,7 +33,7 @@ export default function PlanBuilderPage() {
   const router = useRouter();
   const params = useParams();
   const athleteId = params.id as string;
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin, loading: authLoading } = useAuth();
 
   const [athleteName, setAthleteName] = useState("Athlète");
   const [intervalsApiKey, setIntervalsApiKey] = useState("");
@@ -80,23 +80,37 @@ export default function PlanBuilderPage() {
   });
 
   useEffect(() => {
-    // Basic setup from local storage or context if needed
-    const storedKey = localStorage.getItem("intervalsApiKey");
-    const storedId = localStorage.getItem("intervalsAthleteId");
-    if (storedKey) setIntervalsApiKey(storedKey);
-    if (storedId) setIntervalsAthleteId(storedId);
+    if (authLoading || !isAdmin || !currentUser?.uid) return;
+    let cancelled = false;
 
-    if (athleteId && storedKey) {
-      setIsLoadingLoad(true);
-      fetchAthleteLoad(athleteId, storedKey).then(data => {
-        if (data) setLoadData(data);
-        else setLoadData({ ctl: 43, atl: 44, form: -1 }); // fallback
-        setIsLoadingLoad(false);
-      });
-    } else {
-      setLoadData({ ctl: 43, atl: 44, form: -1 });
-    }
-  }, [athleteId]);
+    getUserIntervalsCredentials(currentUser.uid).then((creds) => {
+      if (cancelled) return;
+      const storedKey = creds.apiKey;
+      const storedId = creds.athleteId;
+      if (storedKey) setIntervalsApiKey(storedKey);
+      if (storedId) setIntervalsAthleteId(storedId);
+
+      if (athleteId && storedKey) {
+        setIsLoadingLoad(true);
+        fetchAthleteLoad(athleteId, storedKey).then(data => {
+          if (cancelled) return;
+          if (data) {
+            setLoadData(data);
+            if (data.name) setAthleteName(data.name);
+          } else {
+            setLoadData({ ctl: 43, atl: 44, form: -1 });
+          }
+          setIsLoadingLoad(false);
+        });
+      } else {
+        setLoadData({ ctl: 43, atl: 44, form: -1 });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteId, currentUser?.uid, isAdmin, authLoading]);
 
   useEffect(() => {
     if (loadData) {
@@ -215,21 +229,19 @@ export default function PlanBuilderPage() {
          finalWorkouts = await generateWorkoutsForMacrocycle(newPlan, config);
       }
 
-      // Save to Firebase
+      // Save to Firebase & scoped localStorage so dashboard can auto-load if needed
       if (currentUser?.uid) {
         await saveAthletePlan(currentUser.uid, athleteId, {
           macrocycle: newPlan,
           workouts: finalWorkouts,
           config: config
         });
+        localStorage.setItem(`latestPlan_${currentUser.uid}_${athleteId}`, JSON.stringify({
+          macrocycle: newPlan,
+          workouts: finalWorkouts,
+          config: config
+        }));
       }
-
-      // Save to localStorage so dashboard can auto-load if needed
-      localStorage.setItem(`latestPlan_${athleteId}`, JSON.stringify({
-        macrocycle: newPlan,
-        workouts: finalWorkouts,
-        config: config
-      }));
 
       // Redirect back to dashboard
       router.push(`/athletes/${athleteId}`);
@@ -298,6 +310,10 @@ export default function PlanBuilderPage() {
   const phaseColors: Record<string, string> = {
     Base: "#4ade80", Build: "#f97316", Peak: "#f59e0b", Taper: "#fcd34d", Recovery: "#9ca3af",
   };
+
+  if (!authLoading && currentUser && !isAdmin) {
+    return null;
+  }
 
   return (
     <div className={styles.dashboardContainer}>

@@ -1,6 +1,7 @@
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { ParsedCourse, TrackPoint, CourseWaypoint, haversineDistance } from './courseParser';
+import { ParsedCourse, TrackPoint, CourseWaypoint, ComparisonResult, haversineDistance } from './courseParser';
+import { RaceCalibrationProfile } from './intervalsApi';
 
 export interface RoadbookWaypoint {
   id?: string;
@@ -10,10 +11,12 @@ export interface RoadbookWaypoint {
   ele?: number;
   pointIndex?: number;
   pause?: number; // minutes
+  time_modifier?: number; // % (100 = normal, >100 = plus rapide, <100 = plus lent)
   cutoffTime?: string;
   type?: string;
   desc?: string;
   technicality?: number;
+  planned_nutrition?: Record<string, number>;
 }
 
 export interface RoadbookDoc {
@@ -28,11 +31,17 @@ export interface RoadbookDoc {
   startTime?: string;
   pacingStrategy?: 'regular' | 'prudent' | 'aggressive';
   paceProfile?: 'coach' | 'aggressive' | 'moderate';
+  descentThreshold?: number;
+  walkThreshold?: number;
+  upCostDivider?: number;
+  downCostModifier?: number;
   officialDistance?: number | string;
   officialElevation?: number | string;
   weather?: string;
   updatedAt?: any;
   isPublic?: boolean;
+  lastRetroSyncAt?: string;
+  lastRetroSyncSource?: string;
 }
 
 export interface RoadbookSummary {
@@ -79,23 +88,29 @@ function getFlatSpeedFromItra(itra: number): number {
 }
 
 /**
- * Facteur de ralentissement en fonction de la pente
+ * Facteur de ralentissement en fonction de la pente, modulé par upCostDivider et downCostModifier
  */
-function getSlopeSpeedMultiplier(slopePct: number): number {
+function getSlopeSpeedMultiplier(
+  slopePct: number,
+  upCostDivider: number = 80,
+  downCostModifier: number = 1.0
+): number {
   const s = slopePct / 100;
   if (s > 0) {
-    // Montée : ralentissement progressif selon Minetti
+    // Montée : ralentissement progressif selon Minetti modulé par l'aisance en côte (upCostDivider: 80 = standard, 100 = puissant)
     const costFlat = minettiCost(0);
     const costUphill = minettiCost(s);
-    return Math.max(0.18, costFlat / costUphill);
+    const upEfficiencyBoost = Math.max(0.75, Math.min(1.3, upCostDivider / 85));
+    return Math.max(0.18, (costFlat / costUphill) * upEfficiencyBoost);
   } else {
-    // Descente : accélération modérée jusqu'à -10%, puis freinage excentrique
+    // Descente : modulée par l'aisance en descente (downCostModifier: 0.4 = agile/rapide, 1.0 = normal, 1.4 = prudent/lent)
+    const downAgilityFactor = Math.max(0.7, Math.min(1.35, 1.15 - (downCostModifier - 0.6) * 0.35));
     if (s >= -0.10) {
-      return 1.0 + Math.abs(s) * 2.2; // Accélération modérée
+      return (1.0 + Math.abs(s) * 2.2) * downAgilityFactor; // Accélération modérée
     } else if (s >= -0.22) {
-      return 1.22 - (Math.abs(s) - 0.10) * 1.5; // Début de retenue
+      return (1.22 - (Math.abs(s) - 0.10) * 1.5) * downAgilityFactor; // Début de retenue
     } else {
-      return Math.max(0.35, 1.04 - (Math.abs(s) - 0.22) * 3.0); // Descente très raide et technique
+      return Math.max(0.35, (1.04 - (Math.abs(s) - 0.22) * 3.0) * downAgilityFactor); // Descente très raide et technique
     }
   }
 }
@@ -163,12 +178,58 @@ export function convertRoadbookToParsedCourse(
   const flatBaseSpeed = getFlatSpeedFromItra(itra);
   const fatiguePercent = (roadbook.fatiguePercent ?? 12) / 100;
   const pacingStrategy = roadbook.pacingStrategy || 'regular';
+  const upCostDivider = Number(roadbook.upCostDivider) || 80;
+  const downCostModifier = Number(roadbook.downCostModifier) || 1.0;
+
+  // Pré-associer les waypoints à leurs index pour appliquer time_modifier par tronçon
+  const enrichedWaypoints: Array<CourseWaypoint & { timeModifierPct: number }> = rawWaypoints.map((wp) => {
+    let closestIdx = 0;
+    let minD = Infinity;
+
+    if (wp.pointIndex !== undefined && wp.pointIndex >= 0 && wp.pointIndex < rawPoints.length) {
+      closestIdx = wp.pointIndex;
+    } else {
+      for (let j = 0; j < rawPoints.length; j++) {
+        const d = haversineDistance(wp.lat, wp.lon, rawPoints[j].lat, rawPoints[j].lon);
+        if (d < minD) {
+          minD = d;
+          closestIdx = j;
+        }
+      }
+    }
+
+    const km = Math.round(distCumulative[closestIdx] * 100) / 100;
+    const ele = rawPoints[closestIdx]?.ele ?? wp.ele ?? 0;
+
+    return {
+      id: wp.id || `wp-${closestIdx}`,
+      name: wp.name,
+      km,
+      ele: Math.round(ele),
+      pauseMin: wp.pause || 0,
+      cutoffTime: wp.cutoffTime,
+      type: wp.type || 'ravito',
+      lat: wp.lat,
+      lon: wp.lon,
+      pointIndex: closestIdx,
+      timeModifierPct: Number(wp.time_modifier) > 0 ? Number(wp.time_modifier) : 100,
+    };
+  }).sort((a, b) => a.km - b.km);
 
   // 4. Déterminer les durées de chaque segment entre points
   const segmentDurationSec: number[] = new Array(rawPoints.length).fill(0);
   let totalCalculatedDurationSec = 0;
+  let curWpSegIdx = 0;
 
   for (let i = 1; i < rawPoints.length; i++) {
+    while (
+      curWpSegIdx < enrichedWaypoints.length - 1 &&
+      (enrichedWaypoints[curWpSegIdx].pointIndex ?? 0) < i
+    ) {
+      curWpSegIdx++;
+    }
+    const segModifier = (enrichedWaypoints[curWpSegIdx]?.timeModifierPct || 100) / 100;
+
     const dKm = distCumulative[i] - distCumulative[i - 1];
     if (dKm <= 0) continue;
 
@@ -177,7 +238,7 @@ export function convertRoadbookToParsedCourse(
     const dEle = p2.ele - p1.ele;
     const slopePct = (dEle / (dKm * 1000)) * 100;
 
-    const slopeMult = getSlopeSpeedMultiplier(slopePct);
+    const slopeMult = getSlopeSpeedMultiplier(slopePct, upCostDivider, downCostModifier);
     const progressRatio = distCumulative[i] / Math.max(0.1, totalDistKm);
 
     // Fatigue progressive
@@ -192,7 +253,7 @@ export function convertRoadbookToParsedCourse(
       fatigueFactor *= 0.95 + 0.15 * progressRatio;
     }
 
-    const speedKmH = Math.max(1.8, Math.min(24, (flatBaseSpeed * slopeMult) / fatigueFactor));
+    const speedKmH = Math.max(1.8, Math.min(24, ((flatBaseSpeed * slopeMult) / fatigueFactor) * segModifier));
     const dtSec = (dKm / speedKmH) * 3600;
 
     segmentDurationSec[i] = dtSec;
@@ -224,41 +285,6 @@ export function convertRoadbookToParsedCourse(
   } else if (options?.paceProfile === 'slow') {
     timeScaleFactor *= 1.12; // Profil prudent (+12%)
   }
-
-  // 6. Associer les waypoints aux distances exactes
-  const enrichedWaypoints: CourseWaypoint[] = rawWaypoints.map((wp) => {
-    let closestIdx = 0;
-    let minD = Infinity;
-
-    // Trouver le point GPS le plus proche si pointIndex non défini
-    if (wp.pointIndex !== undefined && wp.pointIndex >= 0 && wp.pointIndex < rawPoints.length) {
-      closestIdx = wp.pointIndex;
-    } else {
-      for (let j = 0; j < rawPoints.length; j++) {
-        const d = haversineDistance(wp.lat, wp.lon, rawPoints[j].lat, rawPoints[j].lon);
-        if (d < minD) {
-          minD = d;
-          closestIdx = j;
-        }
-      }
-    }
-
-    const km = Math.round(distCumulative[closestIdx] * 100) / 100;
-    const ele = rawPoints[closestIdx]?.ele ?? wp.ele ?? 0;
-
-    return {
-      id: wp.id || `wp-${closestIdx}`,
-      name: wp.name,
-      km,
-      ele: Math.round(ele),
-      pauseMin: wp.pause || 0,
-      cutoffTime: wp.cutoffTime,
-      type: wp.type || 'ravito',
-      lat: wp.lat,
-      lon: wp.lon,
-      pointIndex: closestIdx,
-    };
-  }).sort((a, b) => a.km - b.km);
 
   // 7. Construire les TrackPoints avec timestamps cumulés et temps de pause aux ravitos
   const points: TrackPoint[] = [];
@@ -527,4 +553,434 @@ export async function fetchRoadbookById(roadbookId: string): Promise<RoadbookDoc
   }
 
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. RÉTRO-SYNCHRONISATION (.FIT / COURSE RÉELLE -> ROADBOOK & PROFIL COUREUR)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface RetroSyncWaypointChange {
+  id: string;
+  name: string;
+  km: number;
+  oldPauseMin: number;
+  newPauseMin: number;
+  oldTimeModifierPct: number;
+  newTimeModifierPct: number;
+  segmentDeltaSec: number;
+}
+
+export interface RetroSyncRecommendation {
+  sourceLabel: string;
+  isDemoRoadbook: boolean;
+  oldTargetTimeH: number;
+  newTargetTimeH: number;
+  oldTargetTimeFormatted: string;
+  newTargetTimeFormatted: string;
+  oldItraIndex: number;
+  newItraIndex: number;
+  oldFatiguePercent: number;
+  newFatiguePercent: number;
+  oldPacingStrategy: 'regular' | 'prudent' | 'aggressive';
+  newPacingStrategy: 'regular' | 'prudent' | 'aggressive';
+  oldUpCostDivider: number;
+  newUpCostDivider: number;
+  oldDownCostModifier: number;
+  newDownCostModifier: number;
+  oldWalkThreshold: number;
+  newWalkThreshold: number;
+  oldDescentThreshold: number;
+  newDescentThreshold: number;
+  waypointChanges: RetroSyncWaypointChange[];
+  updatedWaypointsArray: RoadbookWaypoint[];
+  summaryReasons: string[];
+}
+
+function formatHoursToHHMM(hoursDecimal: number): string {
+  const h = Math.floor(hoursDecimal);
+  const m = Math.round((hoursDecimal - h) * 60);
+  if (m === 60) return `${h + 1}h 00m`;
+  return `${h}h ${String(m).padStart(2, '0')}m`;
+}
+
+/**
+ * Calcule la rétro-synchronisation complète d'un Roadbook à partir de la confrontation
+ * entre le Roadbook (Trace 1) et la sortie réelle .FIT / Intervals.icu (Trace 2).
+ */
+export function computeRoadbookRetroSync(
+  roadbook: RoadbookDoc,
+  comparison: ComparisonResult
+): RetroSyncRecommendation {
+  const c1 = comparison.course1;
+  const c2 = comparison.course2;
+  const pa = comparison.pacingAnalysis;
+
+  const oldTargetTimeH = Number(roadbook.targetTime) || Number((c1.totalDurationSec / 3600).toFixed(2));
+  const actualDurationH = Number((c2.totalDurationSec / 3600).toFixed(2));
+  const newTargetTimeH = Math.max(0.5, actualDurationH);
+
+  // 1. Calcul de l'Index ITRA empirique observé sur la Trace 2
+  const distKm = c2.totalDistanceKm || c1.totalDistanceKm || 20;
+  const eleGainM = c2.elevationGainM || c1.elevationGainM || 500;
+  const kmEffort = distKm + eleGainM / 100;
+  const stoppedSec = pa?.stoppedTimeActualSec || 0;
+  const movingHours = Math.max(0.25, (c2.totalDurationSec - stoppedSec * 0.5) / 3600);
+  const durationCorrection = 1 + Math.max(0, Math.log10(Math.max(1, movingHours)) * 0.14);
+  const observedItra = Math.max(
+    280,
+    Math.min(930, Math.round((((kmEffort / movingHours) * durationCorrection) / 21.0) * 1000))
+  );
+  const oldItraIndex = Number(roadbook.itraIndex) || 560;
+  // Lissage pondéré (70% performance réelle du jour, 30% index initial) pour éviter les valeurs aberrantes
+  const newItraIndex = Math.round(observedItra * 0.75 + oldItraIndex * 0.25);
+
+  // 2. Modulation de la Fatigue (%) et de la Stratégie de Pacing selon la dérive 1ère vs 2ème moitié
+  const oldFatiguePercent = Number(roadbook.fatiguePercent ?? 15);
+  const firstHalfDelta = pa?.firstHalfDeltaSec ?? 0;
+  const secondHalfDelta = pa?.secondHalfDeltaSec ?? 0;
+  // Si secondHalfDelta est très négatif par rapport à firstHalfDelta, le coureur a subi une forte dérive (fatigue sous-estimée)
+  const halfDriftSec = firstHalfDelta - secondHalfDelta; // > 0 si 2ème moitié moins bonne que 1ère moitié
+  const halfDriftRatio = c1.totalDurationSec > 0 ? halfDriftSec / (c1.totalDurationSec * 0.5) : 0;
+  const fatigueAdjustment = Math.round(halfDriftRatio * 45);
+  const newFatiguePercent = Math.max(5, Math.min(42, oldFatiguePercent + fatigueAdjustment));
+
+  const oldPacingStrategy = roadbook.pacingStrategy || 'regular';
+  let newPacingStrategy: 'regular' | 'prudent' | 'aggressive' = oldPacingStrategy;
+  if (firstHalfDelta > 120 && secondHalfDelta < -180) {
+    // Parti trop vite, explosion en 2e moitié -> recommander 'prudent'
+    newPacingStrategy = 'prudent';
+  } else if (firstHalfDelta < -120 && secondHalfDelta > 120) {
+    // Negative split marqué -> profil 'prudent' validé ou passage en 'regular'
+    newPacingStrategy = 'regular';
+  } else if (newFatiguePercent >= 22) {
+    newPacingStrategy = 'prudent';
+  }
+
+  // 3. Modulation Montée (upCostDivider) et Descente (downCostModifier)
+  const oldUpCostDivider = Number(roadbook.upCostDivider) || 80;
+  const uphillDeltaSec = pa?.uphillDeltaSec ?? 0;
+  // Si uphillDeltaSec > 0 (avance en montée), le coureur est plus économique en D+ -> augmenter upCostDivider
+  const upDeltaMinutes = uphillDeltaSec / 60;
+  const upDividerShift = Math.max(-12, Math.min(14, Math.round(upDeltaMinutes * 0.8)));
+  const newUpCostDivider = Math.max(65, Math.min(110, oldUpCostDivider + upDividerShift));
+
+  const oldDownCostModifier = Number(roadbook.downCostModifier ?? 1.0);
+  const downhillDeltaSec = pa?.downhillDeltaSec ?? 0;
+  // Si downhillDeltaSec < 0 (perte de temps en descente), le coureur freine plus -> augmenter downCostModifier
+  const downDeltaMinutes = downhillDeltaSec / 60;
+  const downModShift = Math.max(-0.35, Math.min(0.4, -downDeltaMinutes * 0.025));
+  const newDownCostModifier = Number(Math.max(0.25, Math.min(1.65, oldDownCostModifier + downModShift)).toFixed(2));
+
+  const oldWalkThreshold = Number(roadbook.walkThreshold) || 12;
+  const newWalkThreshold = Math.max(6, Math.min(22, oldWalkThreshold + Math.round(upDividerShift / 3)));
+
+  const oldDescentThreshold = Number(roadbook.descentThreshold) || 15;
+  const newDescentThreshold = Math.max(8, Math.min(26, oldDescentThreshold + Math.round(downDeltaMinutes * 0.25)));
+
+  // 4. Rétro-synchronisation des Ravitaillements (Pauses réelles & time_modifier par tronçon)
+  let rawWaypoints: RoadbookWaypoint[] = [];
+  if (typeof roadbook.waypoints === 'string') {
+    try {
+      rawWaypoints = JSON.parse(roadbook.waypoints || '[]');
+    } catch {
+      rawWaypoints = [];
+    }
+  } else if (Array.isArray(roadbook.waypoints)) {
+    rawWaypoints = [...roadbook.waypoints];
+  }
+
+  const wpSplits = comparison.waypointSplits || [];
+  const waypointChanges: RetroSyncWaypointChange[] = [];
+
+  let prevPlannedElapsed = 0;
+  let prevActualElapsed = 0;
+
+  const updatedWaypointsArray: RoadbookWaypoint[] = rawWaypoints.map((wp, idx) => {
+    const matchingSplit =
+      wpSplits.find((s) => s.id === wp.id || s.name.toLowerCase() === wp.name.toLowerCase()) || wpSplits[idx];
+
+    const oldPauseMin = Number(wp.pause) || 0;
+    const oldMod = Number(wp.time_modifier) || 100;
+
+    if (!matchingSplit) {
+      return { ...wp, pause: oldPauseMin, time_modifier: oldMod };
+    }
+
+    // Pause réelle détectée en minutes
+    const detectedPauseMin =
+      matchingSplit.actualPauseSec !== undefined && matchingSplit.actualPauseSec > 0
+        ? Math.round((matchingSplit.actualPauseSec / 60) * 2) / 2
+        : oldPauseMin;
+
+    const isStartOrFinish = wp.type === 'start' || wp.type === 'finish' || matchingSplit.km <= 0.2;
+    const newPauseMin = isStartOrFinish ? 0 : detectedPauseMin;
+
+    // Calcul du ratio de vitesse réel vs prévu sur ce tronçon
+    const segPlannedSec = Math.max(60, matchingSplit.plannedTimeSec - prevPlannedElapsed);
+    const segActualSec = Math.max(60, matchingSplit.actualTimeSec - prevActualElapsed);
+    prevPlannedElapsed = matchingSplit.plannedTimeSec;
+    prevActualElapsed = matchingSplit.actualTimeSec;
+
+    const segDeltaSec = segPlannedSec - segActualSec;
+    // Ajuster le time_modifier du tronçon (pondéré avec le changement de temps global pour ne moduler que la spécificité du tronçon)
+    const globalRatio = c1.totalDurationSec > 0 ? c2.totalDurationSec / c1.totalDurationSec : 1;
+    const normalizedSegRatio = (segPlannedSec * globalRatio) / segActualSec;
+    const rawNewMod = Math.round(oldMod * (0.4 + 0.6 * normalizedSegRatio));
+    const newTimeModifierPct = Math.max(65, Math.min(140, rawNewMod));
+
+    waypointChanges.push({
+      id: wp.id || `wp-${idx}`,
+      name: wp.name,
+      km: matchingSplit.km,
+      oldPauseMin,
+      newPauseMin,
+      oldTimeModifierPct: oldMod,
+      newTimeModifierPct,
+      segmentDeltaSec: Math.round(segDeltaSec),
+    });
+
+    return {
+      ...wp,
+      pause: newPauseMin,
+      time_modifier: newTimeModifierPct,
+    };
+  });
+
+  // 5. Générer les explications synthétiques
+  const summaryReasons: string[] = [];
+  const totalDeltaMin = Math.round(comparison.totalTimeDeltaSec / 60);
+  if (Math.abs(totalDeltaMin) >= 1) {
+    summaryReasons.push(
+      `Objectif recalibré de ${formatHoursToHHMM(oldTargetTimeH)} à ${formatHoursToHHMM(newTargetTimeH)} (${totalDeltaMin >= 0 ? `avance de ${totalDeltaMin} min` : `retard de ${Math.abs(totalDeltaMin)} min`} sur la trace réelle).`
+    );
+  }
+  if (newItraIndex !== oldItraIndex) {
+    summaryReasons.push(
+      `Index ITRA effectif ajusté de ${oldItraIndex} → ${newItraIndex} selon votre vitesse réelle en km-effort (${kmEffort.toFixed(1)} ke).`
+    );
+  }
+  if (newUpCostDivider !== oldUpCostDivider || newDownCostModifier !== oldDownCostModifier) {
+    summaryReasons.push(
+      `Rendement pentes modulé : Coût Montée ${oldUpCostDivider} → ${newUpCostDivider} (${uphillDeltaSec >= 0 ? 'gain' : 'perte'} en D+) et Agilité Descente ${oldDownCostModifier} → ${newDownCostModifier}.`
+    );
+  }
+  if (newFatiguePercent !== oldFatiguePercent) {
+    summaryReasons.push(
+      `Courbe de fatigue calibrée de ${oldFatiguePercent}% → ${newFatiguePercent}% (stratégie recommandée : ${newPacingStrategy === 'prudent' ? 'Prudent' : newPacingStrategy === 'aggressive' ? 'Agressif' : 'Régulier'}).`
+    );
+  }
+
+  return {
+    sourceLabel: c2.name,
+    isDemoRoadbook: roadbook.id.startsWith('demo-'),
+    oldTargetTimeH,
+    newTargetTimeH,
+    oldTargetTimeFormatted: formatHoursToHHMM(oldTargetTimeH),
+    newTargetTimeFormatted: formatHoursToHHMM(newTargetTimeH),
+    oldItraIndex,
+    newItraIndex,
+    oldFatiguePercent,
+    newFatiguePercent,
+    oldPacingStrategy,
+    newPacingStrategy,
+    oldUpCostDivider,
+    newUpCostDivider,
+    oldDownCostModifier,
+    newDownCostModifier,
+    oldWalkThreshold,
+    newWalkThreshold,
+    oldDescentThreshold,
+    newDescentThreshold,
+    waypointChanges,
+    updatedWaypointsArray,
+    summaryReasons,
+  };
+}
+
+/**
+ * Construit une recommandation de modulation d'un Roadbook à partir de la signature
+ * extraite des sorties clairement intitulées "Course" (Intervals.icu).
+ */
+export function computeRoadbookModulationFromRaces(
+  roadbook: RoadbookDoc,
+  raceProfile: RaceCalibrationProfile
+): RetroSyncRecommendation {
+  const oldTargetTimeH = Number(roadbook.targetTime) || 5.0;
+  const newTargetTimeH = raceProfile.estimatedTargetHoursForRoadbook || oldTargetTimeH;
+  const oldItraIndex = Number(roadbook.itraIndex) || 560;
+  const oldFatiguePercent = Number(roadbook.fatiguePercent ?? 15);
+  const oldPacingStrategy = roadbook.pacingStrategy || 'regular';
+  const oldUpCostDivider = Number(roadbook.upCostDivider) || 80;
+  const oldDownCostModifier = Number(roadbook.downCostModifier ?? 1.0);
+  const oldWalkThreshold = Number(roadbook.walkThreshold) || 12;
+  const oldDescentThreshold = Number(roadbook.descentThreshold) || 15;
+
+  let rawWaypoints: RoadbookWaypoint[] = [];
+  if (typeof roadbook.waypoints === 'string') {
+    try {
+      rawWaypoints = JSON.parse(roadbook.waypoints || '[]');
+    } catch {
+      rawWaypoints = [];
+    }
+  } else if (Array.isArray(roadbook.waypoints)) {
+    rawWaypoints = [...roadbook.waypoints];
+  }
+
+  const waypointChanges: RetroSyncWaypointChange[] = [];
+  const updatedWaypointsArray: RoadbookWaypoint[] = rawWaypoints.map((wp, idx) => {
+    const oldPauseMin = Number(wp.pause) || 0;
+    const oldMod = Number(wp.time_modifier) || 100;
+    const isAidStation = wp.type === 'food' || wp.type === 'ravito' || wp.type === 'water' || oldPauseMin > 0;
+    const isStartOrFinish = wp.type === 'start' || wp.type === 'finish' || idx === 0 || idx === rawWaypoints.length - 1;
+    const newPauseMin = isStartOrFinish
+      ? 0
+      : isAidStation
+      ? Math.max(2, Math.round((oldPauseMin * 0.5 + raceProfile.avgPauseMinutesPer20Km * 0.5) * 2) / 2)
+      : oldPauseMin;
+
+    waypointChanges.push({
+      id: wp.id || `wp-${idx}`,
+      name: wp.name,
+      km: idx * 8,
+      oldPauseMin,
+      newPauseMin,
+      oldTimeModifierPct: oldMod,
+      newTimeModifierPct: oldMod,
+      segmentDeltaSec: 0,
+    });
+
+    return {
+      ...wp,
+      pause: newPauseMin,
+      time_modifier: oldMod,
+    };
+  });
+
+  const summaryReasons: string[] = [
+    `Calibré sur ${raceProfile.racesCount} sortie(s) de compétition (${raceProfile.explicitCoursesCount} intitulée(s) explicitement "Course").`,
+    `Cote ITRA empirique en course : ${oldItraIndex} → ${raceProfile.avgEmpiricalItra}.`,
+    `Temps cible modulé pour ce parcours : ${formatHoursToHHMM(oldTargetTimeH)} → ${formatHoursToHHMM(newTargetTimeH)}.`,
+    `Indice de fatigue réel observé en compétition : ${raceProfile.recommendedFatiguePercent}% (${raceProfile.recommendedPacingStrategy}).`,
+  ];
+
+  return {
+    sourceLabel: `${raceProfile.racesCount} sortie(s) "Course" Intervals.icu`,
+    isDemoRoadbook: roadbook.id.startsWith('demo-'),
+    oldTargetTimeH,
+    newTargetTimeH,
+    oldTargetTimeFormatted: formatHoursToHHMM(oldTargetTimeH),
+    newTargetTimeFormatted: formatHoursToHHMM(newTargetTimeH),
+    oldItraIndex,
+    newItraIndex: raceProfile.avgEmpiricalItra,
+    oldFatiguePercent,
+    newFatiguePercent: raceProfile.recommendedFatiguePercent,
+    oldPacingStrategy,
+    newPacingStrategy: raceProfile.recommendedPacingStrategy,
+    oldUpCostDivider,
+    newUpCostDivider: raceProfile.recommendedUpCostDivider,
+    oldDownCostModifier,
+    newDownCostModifier: raceProfile.recommendedDownCostModifier,
+    oldWalkThreshold,
+    newWalkThreshold: raceProfile.recommendedWalkThreshold,
+    oldDescentThreshold,
+    newDescentThreshold: raceProfile.recommendedDescentThreshold,
+    waypointChanges,
+    updatedWaypointsArray,
+    summaryReasons,
+  };
+}
+
+/**
+ * Applique et sauvegarde les paramètres rétro-synchronisés sur le Roadbook en mémoire
+ * et dans Firestore (collection `roadbooks` et optionnellement profil global `users`).
+ */
+export async function applyRetroSyncToRoadbookAndProfile(
+  roadbook: RoadbookDoc,
+  rec: RetroSyncRecommendation,
+  options: {
+    syncTargetTime: boolean;
+    syncPhysiology: boolean;
+    syncSlopes: boolean;
+    syncWaypoints: boolean;
+    updateGlobalUserProfile: boolean;
+    userId?: string;
+  }
+): Promise<{ updatedRoadbook: RoadbookDoc; savedToFirestore: boolean; savedToProfile: boolean }> {
+  const updatedRoadbook: RoadbookDoc = {
+    ...roadbook,
+    targetTime: options.syncTargetTime ? rec.newTargetTimeH : roadbook.targetTime,
+    itraIndex: options.syncPhysiology ? rec.newItraIndex : roadbook.itraIndex,
+    fatiguePercent: options.syncPhysiology ? rec.newFatiguePercent : roadbook.fatiguePercent,
+    pacingStrategy: options.syncPhysiology ? rec.newPacingStrategy : roadbook.pacingStrategy,
+    upCostDivider: options.syncSlopes ? rec.newUpCostDivider : roadbook.upCostDivider,
+    downCostModifier: options.syncSlopes ? rec.newDownCostModifier : roadbook.downCostModifier,
+    walkThreshold: options.syncSlopes ? rec.newWalkThreshold : roadbook.walkThreshold,
+    descentThreshold: options.syncSlopes ? rec.newDescentThreshold : roadbook.descentThreshold,
+    waypoints: options.syncWaypoints ? rec.updatedWaypointsArray : roadbook.waypoints,
+    lastRetroSyncAt: new Date().toISOString(),
+    lastRetroSyncSource: rec.sourceLabel,
+  };
+
+  let savedToFirestore = false;
+  let savedToProfile = false;
+
+  // 1. Persister sur le document Roadbook dans Firestore (si ce n'est pas un roadbook de démo)
+  if (roadbook.id && !roadbook.id.startsWith('demo-')) {
+    try {
+      const rbRef = doc(db, 'roadbooks', roadbook.id);
+      const firestorePayload: Record<string, any> = {
+        updatedAt: Date.now(),
+        lastRetroSyncAt: updatedRoadbook.lastRetroSyncAt,
+        lastRetroSyncSource: updatedRoadbook.lastRetroSyncSource,
+      };
+      if (options.syncTargetTime) firestorePayload.targetTime = rec.newTargetTimeH;
+      if (options.syncPhysiology) {
+        firestorePayload.itraIndex = String(rec.newItraIndex);
+        firestorePayload.fatiguePercent = rec.newFatiguePercent;
+        firestorePayload.pacingStrategy = rec.newPacingStrategy;
+      }
+      if (options.syncSlopes) {
+        firestorePayload.upCostDivider = rec.newUpCostDivider;
+        firestorePayload.downCostModifier = rec.newDownCostModifier;
+        firestorePayload.walkThreshold = rec.newWalkThreshold;
+        firestorePayload.descentThreshold = rec.newDescentThreshold;
+      }
+      if (options.syncWaypoints) {
+        firestorePayload.waypoints = JSON.stringify(rec.updatedWaypointsArray);
+      }
+
+      await updateDoc(rbRef, firestorePayload);
+      savedToFirestore = true;
+    } catch (err) {
+      console.error('[RetroSync] Erreur lors de la mise à jour Firestore du roadbook :', err);
+    }
+  }
+
+  // 2. Persister dans le profil physiologique global de l'utilisateur (`users/{uid}`)
+  const targetUid = options.userId || roadbook.userId;
+  if (options.updateGlobalUserProfile && targetUid) {
+    try {
+      const userRef = doc(db, 'users', targetUid);
+      const userPayload: Record<string, any> = {
+        updatedAt: new Date().toISOString(),
+      };
+      if (options.syncPhysiology) {
+        userPayload.itraIndex = String(rec.newItraIndex);
+        userPayload.fatiguePercent = rec.newFatiguePercent;
+        userPayload.pacingStrategy = rec.newPacingStrategy;
+      }
+      if (options.syncSlopes) {
+        userPayload.upCostDivider = rec.newUpCostDivider;
+        userPayload.downCostModifier = rec.newDownCostModifier;
+        userPayload.walkThreshold = rec.newWalkThreshold;
+        userPayload.descentThreshold = rec.newDescentThreshold;
+      }
+      await setDoc(userRef, userPayload, { merge: true });
+      savedToProfile = true;
+    } catch (err) {
+      console.error('[RetroSync] Erreur lors de la mise à jour du profil utilisateur :', err);
+    }
+  }
+
+  return { updatedRoadbook, savedToFirestore, savedToProfile };
 }

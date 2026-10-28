@@ -1,79 +1,62 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
-import { LayoutDashboard, Compass, Apple, HelpCircle, Settings, MapPin } from "lucide-react";
-import styles from "./BottomNav.module.css";
+import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import { Compass, Mountain, Apple, GitCompare, Sparkles } from 'lucide-react';
+import styles from './BottomNav.module.css';
 
 export default function BottomNav() {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const pathname = usePathname();
 
-  // Afficher uniquement si l'utilisateur est connecté
-  if (!currentUser) return null;
+  if (!currentUser || !pathname || pathname === '/' || pathname === '/login') {
+    return null;
+  }
 
-  // Cacher également sur les pages d'auth
-  if (pathname === "/login" || pathname === "/register") return null;
-
-  const isEditor = pathname.startsWith("/editor");
-
-  const navItems = [
-    {
-      label: "Roadbooks",
-      href: "/dashboard",
-      icon: LayoutDashboard,
-      isActive: pathname === "/dashboard" || pathname === "/",
-    },
-    {
-      label: "Traces",
-      href: "/official-traces",
-      icon: Compass,
-      isActive: pathname === "/official-traces",
-    },
-    ...(isEditor
-      ? [
-          {
-            label: "Éditeur",
-            href: pathname,
-            icon: MapPin,
-            isActive: true,
-          },
-        ]
-      : []),
-    {
-      label: "Nutrition",
-      href: "/nutrition",
-      icon: Apple,
-      isActive: pathname === "/nutrition",
-    },
-    {
-      label: "Aide",
-      href: "/help",
-      icon: HelpCircle,
-      isActive: pathname === "/help",
-    },
-    {
-      label: "Profil",
-      href: "/settings",
-      icon: Settings,
-      isActive: pathname === "/settings",
-    },
+  const items = [
+    { href: '/dashboard', label: 'Roadbooks', icon: Compass, external: false },
+    { href: '/official-traces', label: 'Traces', icon: Mountain, external: false },
+    { href: '/coach/comparator', label: 'Comparateur', icon: GitCompare, external: true },
+    ...(isAdmin ? [{ href: '/coach', label: 'Coaching', icon: Sparkles, external: true }] : []),
+    { href: '/nutrition', label: 'Nutrition', icon: Apple, external: false },
   ];
 
   return (
-    <nav className={styles.bottomNav} aria-label="Navigation principale mobile">
-      {navItems.map((item) => {
+    <nav className={styles.bottomNav} aria-label="Navigation principale">
+      {items.map((item) => {
         const Icon = item.icon;
+        const isActive =
+          !item.external &&
+          (pathname === item.href ||
+            (item.href !== '/dashboard' && pathname?.startsWith(item.href)) ||
+            (item.href === '/dashboard' && pathname?.startsWith('/editor/')));
+
+        if (item.external) {
+          return (
+            <a
+              key={item.href}
+              href={item.href}
+              className={styles.navItem}
+            >
+              <div className={styles.iconWrap}>
+                <Icon size={20} strokeWidth={1.8} />
+              </div>
+              <span className={styles.label}>{item.label}</span>
+            </a>
+          );
+        }
+
         return (
           <Link
-            key={item.label}
+            key={item.href}
             href={item.href}
-            className={`${styles.navItem} ${item.isActive ? styles.navItemActive : ""}`}
+            className={`${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
           >
             <div className={styles.iconWrap}>
-              {item.isActive && <div className={styles.activePill} />}
-              <Icon size={20} />
+              <Icon size={20} strokeWidth={isActive ? 2.4 : 1.8} />
+              {isActive && <span className={styles.activePill} />}
             </div>
             <span className={styles.label}>{item.label}</span>
           </Link>

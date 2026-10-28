@@ -22,8 +22,13 @@ function fmtDelta(gainSec: number): string {
   if (isNaN(gainSec) || gainSec === null || gainSec === undefined) return '0:00';
   const sign = gainSec >= 0 ? '+' : '-';
   const abs = Math.abs(Math.round(gainSec));
-  const m = Math.floor(abs / 60);
+  if (abs < 60) return `${sign}${abs} s`;
+  const h = Math.floor(abs / 3600);
+  const m = Math.floor((abs % 3600) / 60);
   const s = abs % 60;
+  if (h > 0) {
+    return `${sign}${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+  }
   return `${sign}${m} min ${String(s).padStart(2, '0')} s`;
 }
 
@@ -121,8 +126,15 @@ export default function CourseComparatorMap({
     return { peakIdx: pIdx, peakAlt: Math.max(0, pAlt) };
   }, [dualPts]);
 
-  // Combined bounds of all trackpoints
+  // Combined bounds of all trackpoints (using full raw GPX coordinates when available)
   const trackBounds = useMemo(() => {
+    if (course1?.points && course1.points.length > 0) {
+      const latLngs: L.LatLngTuple[] = course1.points.map((p) => [p.lat, p.lon] as L.LatLngTuple);
+      if (course2?.points && course2.points.length > 0) {
+        course2.points.forEach((p) => latLngs.push([p.lat, p.lon]));
+      }
+      return L.latLngBounds(latLngs);
+    }
     if (dualPts.length === 0) return null;
     const latLngs: L.LatLngTuple[] = [];
     dualPts.forEach((p) => {
@@ -130,7 +142,7 @@ export default function CourseComparatorMap({
       latLngs.push([p[7], p[8]]);
     });
     return L.latLngBounds(latLngs);
-  }, [dualPts]);
+  }, [course1?.points, course2?.points, dualPts]);
 
   // 1. Initialize Leaflet Map once
   useEffect(() => {
@@ -144,6 +156,7 @@ export default function CourseComparatorMap({
       center: initialCenter,
       zoom: 13,
       zoomControl: false,
+      preferCanvas: true, // Canvas vector rendering for high-resolution GPX traces
     });
 
     // Custom zoom control in bottom-right so top-right toolbar has plenty of space
@@ -212,9 +225,14 @@ export default function CourseComparatorMap({
     tracksGroup.clearLayers();
     markersGroup.clearLayers();
 
-    // Trace 1 positions & Trace 2 positions
-    const pos1: L.LatLngTuple[] = dualPts.map((p) => [p[1], p[2]]);
-    const pos2: L.LatLngTuple[] = dualPts.map((p) => [p[7], p[8]]);
+    // High-resolution GPX coordinates: uses 100% of the raw GPS trackpoints from the file
+    const pos1: L.LatLngTuple[] = (course1?.points && course1.points.length > 0)
+      ? course1.points.map((p) => [p.lat, p.lon] as L.LatLngTuple)
+      : dualPts.map((p) => [p[1], p[2]] as L.LatLngTuple);
+
+    const pos2: L.LatLngTuple[] = (!isSingleCourse && course2?.points && course2.points.length > 0)
+      ? course2.points.map((p) => [p.lat, p.lon] as L.LatLngTuple)
+      : dualPts.map((p) => [p[7], p[8]] as L.LatLngTuple);
 
     // Click handler on polylines to jump timeline
     const handlePolyClick = (e: L.LeafletMouseEvent) => {
@@ -237,9 +255,9 @@ export default function CourseComparatorMap({
 
     if (mapMode === 'dual') {
       if (!isSingleCourse) {
-        // Divergence lines between traces when distance > 30m
-        dualPts.forEach((p, idx) => {
-          if (p[12] > 30) {
+        // Divergence lines between traces when distance > 25m
+        dualPts.forEach((p) => {
+          if (p[12] > 25) {
             const divLine = L.polyline(
               [
                 [p[1], p[2]],
@@ -250,45 +268,49 @@ export default function CourseComparatorMap({
                 weight: 2,
                 dashArray: '3, 4',
                 opacity: 0.85,
+                smoothFactor: 0.2,
               }
             );
-            divLine.bindTooltip(`Écart de trace : ${Math.round(p[12])} m (Km ${p[0].toFixed(1)})`);
+            divLine.bindTooltip(`Écart de trace : ${Math.round(p[12])} m (Km ${p[0].toFixed(2)})`);
             tracksGroup.addLayer(divLine);
           }
         });
       }
 
-      // 1. Trace 1 (Référence / Norme) — Coral / Rose with subtle white outline
+      // 1. Trace 1 (Référence / Norme) — Brand Coral (#FF5A36) with subtle white outline & high resolution
       const halo1 = L.polyline(pos1, {
         color: '#ffffff',
         weight: 6,
         opacity: 0.75,
         lineCap: 'round',
         lineJoin: 'round',
+        smoothFactor: 0.2,
       });
       tracksGroup.addLayer(halo1);
 
       const line1 = L.polyline(pos1, {
-        color: '#e11d48',
+        color: '#FF5A36',
         weight: 3.8,
         opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round',
+        smoothFactor: 0.2,
       });
       line1.bindTooltip(
-        `<strong>${isSingleCourse ? 'Tracé' : 'Trace 1 (Référence)'}</strong><br/>${course1.name}<br/>${course1.totalDistanceKm} km • D+ ${course1.elevationGainM}m`
+        `<strong>${isSingleCourse ? 'Tracé GPX' : 'Trace 1 (Référence)'}</strong><br/>${course1.name}<br/>${course1.totalDistanceKm} km • D+ ${course1.elevationGainM}m`
       );
       line1.on('click', handlePolyClick);
       tracksGroup.addLayer(line1);
 
       if (!isSingleCourse) {
-        // 2. Trace 2 (Comparée / Réalisée) — Electric Sky Blue Dashed with white outline
+        // 2. Trace 2 (Comparée / Réalisée) — Electric Sky Blue Dashed with white outline & high resolution
         const halo2 = L.polyline(pos2, {
           color: '#ffffff',
           weight: 6,
           opacity: 0.75,
           lineCap: 'round',
           lineJoin: 'round',
+          smoothFactor: 0.2,
         });
         tracksGroup.addLayer(halo2);
 
@@ -299,6 +321,7 @@ export default function CourseComparatorMap({
           dashArray: '7, 5',
           lineCap: 'round',
           lineJoin: 'round',
+          smoothFactor: 0.2,
         });
         line2.bindTooltip(
           `<strong>Trace 2 (Comparée)</strong><br/>${course2.name}<br/>${course2.totalDistanceKm} km • D+ ${course2.elevationGainM}m`
@@ -308,12 +331,23 @@ export default function CourseComparatorMap({
       }
 
     } else {
-      // Thermal mode: Green = gained time, Red = lost time
+      // High-resolution Thermal Heatmap: continuous gradient based on local gain rate (s/km)
       for (let i = 0; i < dualPts.length - 1; i++) {
         const p1 = dualPts[i];
         const p2 = dualPts[i + 1];
+        const dDistKm = Math.max(0.005, p2[0] - p1[0]);
         const localGain = (p2[4] - p1[4]) - (p2[10] - p1[10]);
-        const isGaining = localGain >= 0;
+        const gainRatePerKm = localGain / dDistKm; // s/km gain or loss rate
+
+        // Continuous high-resolution color scale:
+        let segColor: string;
+        if (gainRatePerKm >= 20) segColor = '#059669'; // Heavy gain: dark emerald
+        else if (gainRatePerKm >= 6) segColor = '#10b981'; // Good gain: emerald
+        else if (gainRatePerKm >= 1) segColor = '#34d399'; // Slight gain: mint
+        else if (gainRatePerKm > -1) segColor = '#94a3b8'; // Neutral: slate
+        else if (gainRatePerKm > -6) segColor = '#fb923c'; // Slight loss: amber-orange
+        else if (gainRatePerKm > -20) segColor = '#f87171'; // Moderate loss: coral
+        else segColor = '#dc2626'; // Heavy loss: intense crimson
 
         const segmentHalo = L.polyline(
           [
@@ -322,9 +356,10 @@ export default function CourseComparatorMap({
           ],
           {
             color: '#ffffff',
-            weight: 6,
-            opacity: 0.7,
+            weight: 5.5,
+            opacity: 0.65,
             lineCap: 'round',
+            smoothFactor: 0.2,
           }
         );
         tracksGroup.addLayer(segmentHalo);
@@ -335,14 +370,19 @@ export default function CourseComparatorMap({
             [p2[1], p2[2]],
           ],
           {
-            color: isGaining ? '#10b981' : '#ef4444',
+            color: segColor,
             weight: 4.2,
             opacity: 0.95,
             lineCap: 'round',
+            smoothFactor: 0.2,
           }
         );
+
+        const gainSign = localGain >= 0 ? '+' : '';
+        const rateSign = gainRatePerKm >= 0 ? '+' : '';
         segment.bindTooltip(
-          `Km ${p1[0].toFixed(1)} &rarr; ${p2[0].toFixed(1)} : ${isGaining ? 'Avance (Gain)' : 'Retard (Perte)'} (${Math.abs(localGain).toFixed(1)}s)`
+          `<strong>Tronçon Km ${p1[0].toFixed(2)} &rarr; ${p2[0].toFixed(2)}</strong><br/>` +
+          `Écart : <strong style="color:${segColor}">${gainSign}${localGain.toFixed(1)}s</strong> (${rateSign}${Math.round(gainRatePerKm)} s/km)`
         );
         segment.on('click', handlePolyClick);
         tracksGroup.addLayer(segment);
@@ -829,7 +869,7 @@ export default function CourseComparatorMap({
         <div className={styles.telemetryBadge}>
           <div className={styles.telemetryItem}>
             <MapPin size={13} className="text-orange-400" />
-            <span>Km {activeDist1.toFixed(1)}</span>
+            <span>Km {activeDist1.toFixed(2)}</span>
           </div>
 
           <div className={styles.telemetryDivider}></div>

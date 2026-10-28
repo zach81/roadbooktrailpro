@@ -1,4 +1,4 @@
-import { ComparisonResult } from './courseParser';
+import { ComparisonResult, compareCourses } from './courseParser';
 
 export const SAMPLE_DUAL_PTS: number[][] = [
   [0.00, 42.48493, 2.74879, 179.8, 0, 86,     0.00, 42.48556, 2.74699, 216.6, 0, 92, 163],
@@ -145,55 +145,51 @@ export const SAMPLE_NOTES = [
 ];
 
 export function getSampleComparison(): ComparisonResult {
-  return {
-    course1: {
-      name: "Trace 1 : 23 Oct. 2022 (Norme)",
-      points: SAMPLE_DUAL_PTS.map((p) => ({
-        lat: p[1],
-        lon: p[2],
-        ele: p[3],
-        elapsedSec: p[4],
-        distKm: p[0],
-        hr: p[5],
-      })),
-      totalDistanceKm: 23.02,
-      totalDurationSec: 10082, // 2h48m02s
-      elevationGainM: 1638,
-      elevationLossM: 1638,
-      minElevationM: 177,
-      maxElevationM: 1329,
-      avgHr: 158,
-      maxHr: 198,
-      dateStr: "23 Oct. 2022",
-      sourceType: "GPX",
-    },
-    course2: {
-      name: "Trace 2 : 18 Oct. 2026",
-      points: SAMPLE_DUAL_PTS.map((p) => ({
-        lat: p[7],
-        lon: p[8],
-        ele: p[9],
-        elapsedSec: p[10],
-        distKm: p[6],
-        hr: p[11],
-      })),
-      totalDistanceKm: 24.08,
-      totalDurationSec: 10411, // 2h53m31s
-      elevationGainM: 1697,
-      elevationLossM: 1697,
-      minElevationM: 184,
-      maxElevationM: 1336,
-      avgHr: 142,
-      maxHr: 178,
-      dateStr: "18 Oct. 2026",
-      sourceType: "FIT",
-    },
-    dualPts: SAMPLE_DUAL_PTS,
-    kmSplits: SAMPLE_KM_SPLITS,
-    medianErrorM: 6.2,
-    maxErrorM: 287,
-    maxErrorKm: 1.08,
-    totalTimeDeltaSec: 10082 - 10411, // -329s (-5m29s)
-    notes: SAMPLE_NOTES,
+  const c1 = {
+    name: "Trace 1 : 23 Oct. 2022 (Norme)",
+    points: SAMPLE_DUAL_PTS.map((p) => ({
+      lat: p[1],
+      lon: p[2],
+      ele: p[3],
+      elapsedSec: p[4],
+      distKm: p[0],
+      hr: p[5],
+    })),
+    totalDistanceKm: 23.02,
+    totalDurationSec: 10082, // 2h48m02s
+    elevationGainM: 1638,
+    elevationLossM: 1638,
+    minElevationM: 177,
+    maxElevationM: 1329,
+    avgHr: 158,
+    maxHr: 198,
+    dateStr: "23 Oct. 2022",
+    sourceType: "GPX" as const,
   };
+
+  const c2 = {
+    name: "Trace 2 : 18 Oct. 2026",
+    points: SAMPLE_DUAL_PTS.map((p) => ({
+      lat: p[7],
+      lon: p[8],
+      ele: p[9],
+      elapsedSec: p[10],
+      distKm: p[6],
+      hr: p[11],
+    })),
+    totalDistanceKm: 24.08,
+    totalDurationSec: 10411, // 2h53m31s
+    elevationGainM: 1697,
+    elevationLossM: 1697,
+    minElevationM: 184,
+    maxElevationM: 1336,
+    avgHr: 142,
+    maxHr: 178,
+    dateStr: "18 Oct. 2026",
+    sourceType: "FIT" as const,
+  };
+
+  const comp = compareCourses(c1, c2);
+  comp.notes = SAMPLE_NOTES;
+  return comp;
 }

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateMacrocycle, generateWorkoutsForMacrocycle } from "@/lib/trainingEngine";
 import { uploadWorkoutsToIntervals, fetchCoachedAthletes, deleteWorkoutsFromIntervals, fetchAthleteLoad, uploadPhasesToIntervals, uploadWeeklyTargetsToIntervals } from "@/lib/intervalsApi";
-import { getAthletesFromFirebase, saveAthletesToFirebase, saveWorkoutTemplate, saveAthletePlan, getAthletePlans } from "@/lib/firebaseUtils";
+import { getAthletesFromFirebase, saveAthletesToFirebase, saveWorkoutTemplate, saveAthletePlan, getAthletePlans, getUserIntervalsCredentials, saveUserIntervalsCredentials } from "@/lib/firebaseUtils";
 import { Macrocycle, Workout } from "@/types";
 import WorkoutEditorModal from "@/components/WorkoutEditorModal";
 import WorkoutLibraryModal from "@/components/WorkoutLibraryModal";
@@ -212,7 +212,7 @@ export default function AthletePlanner() {
   const params = useParams();
   const router = useRouter();
   const athleteId = params.id as string;
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin, loading: authLoading } = useAuth();
 
   const [selectedAthlete, setSelectedAthlete] = useState(athleteId);
   const [athleteStats, setAthleteStats] = useState<any>(null);
@@ -234,26 +234,23 @@ export default function AthletePlanner() {
   const [isGeneratingMoreAi, setIsGeneratingMoreAi] = useState(false);
   const [savedPlans, setSavedPlans] = useState<any[]>([]);
 
-  const initialMockAthletes = [
-    { id: "athlete-1", name: "Jean Dupont (UTMB)" },
-    { id: "athlete-2", name: "Marie Curie (Templiers)" },
-    { id: "athlete-3", name: "Kilian J. (Zegama)" },
-  ];
-  
-  const [athletes, setAthletes] = useState(initialMockAthletes);
+  const [athletes, setAthletes] = useState<any[]>([]);
   const [isFetchingAthletes, setIsFetchingAthletes] = useState(false);
 
   useEffect(() => {
-    const storedId = localStorage.getItem("intervalsAthleteId");
-    const storedKey = localStorage.getItem("intervalsApiKey");
-    if (storedId) setIntervalsAthleteId(storedId);
-    if (storedKey) setIntervalsApiKey(storedKey);
-
+    if (authLoading || !isAdmin) return;
     const initAthletes = async () => {
       if (currentUser?.uid) {
-        // Load from Firebase first
-        const cachedAthletes = await getAthletesFromFirebase(currentUser.uid);
-        let currentAthletes = cachedAthletes || [];
+        const [creds, cachedAthletes] = await Promise.all([
+          getUserIntervalsCredentials(currentUser.uid),
+          getAthletesFromFirebase(currentUser.uid),
+        ]);
+        const storedId = creds.athleteId;
+        const storedKey = creds.apiKey;
+        if (storedId) setIntervalsAthleteId(storedId);
+        if (storedKey) setIntervalsApiKey(storedKey);
+
+        const currentAthletes = cachedAthletes || [];
         
         if (currentAthletes.length > 0) {
           setAthletes(currentAthletes);
@@ -276,14 +273,24 @@ export default function AthletePlanner() {
             // Also fetch all athletes to update the list/names in background if needed
             const data = await fetchCoachedAthletes(storedId as string, storedKey);
             if (Array.isArray(data) && data.length > 0) {
-              const fetchedAthletes = data.map((a: any, index: number) => {
-                const id = a.id || a.athlete?.id || a.athlete_id || `unknown-${index}`;
+              const mappedAthletes = data.map((a: any, index: number) => {
+                const rawId = a.athlete_id || a.athlete?.id || a.id || `unknown-${index}`;
+                const id = String(rawId);
                 const name = a.athlete_name || a.name || a.athlete?.name || (a.firstname ? `${a.firstname} ${a.lastname || ''}`.trim() : `Athlète ${index + 1}`);
                 const ctl = Math.round(a.fitness ?? a.ctl ?? a.icu?.ctl ?? 0);
                 const atl = Math.round(a.fatigue ?? a.atl ?? a.icu?.atl ?? 0);
                 const form = Math.round(a.form ?? a.icu?.form ?? (ctl - atl));
                 return { id, name, ctl, atl, form };
               });
+
+              const uniqueById: Record<string, any> = {};
+              for (const ath of mappedAthletes) {
+                const existing = uniqueById[ath.id];
+                if (!existing || ath.ctl > existing.ctl) {
+                  uniqueById[ath.id] = ath;
+                }
+              }
+              const fetchedAthletes: any[] = Object.values(uniqueById);
               
               if (!fetchedAthletes.find((a: any) => a.id === storedId)) {
                 fetchedAthletes.unshift({ id: storedId, name: "Moi", ctl: 0, atl: 0, form: 0 }); 
@@ -324,11 +331,13 @@ export default function AthletePlanner() {
     };
 
     initAthletes();
-  }, [athleteId]);
+  }, [athleteId, currentUser?.uid, isAdmin, authLoading]);
 
   useEffect(() => {
-    // Automatically load newly generated plan from the Coach Page
-    const latestPlanStr = localStorage.getItem(`latestPlan_${athleteId}`);
+    if (!currentUser?.uid) return;
+    // Automatically load newly generated plan from the Coach Page (scoped per account)
+    const scopedPlanKey = `latestPlan_${currentUser.uid}_${athleteId}`;
+    const latestPlanStr = localStorage.getItem(scopedPlanKey);
     if (latestPlanStr) {
       try {
         const latestPlan = JSON.parse(latestPlanStr);
@@ -342,16 +351,17 @@ export default function AthletePlanner() {
         setWorkouts(parsedWorkouts);
         
         // Clear to avoid reloading on refresh
-        localStorage.removeItem(`latestPlan_${athleteId}`);
+        localStorage.removeItem(scopedPlanKey);
       } catch (e) {
         console.error("Error loading latest plan", e);
       }
     }
-  }, [athleteId]);
+  }, [athleteId, currentUser?.uid]);
 
-  const saveConfig = () => {
-    localStorage.setItem("intervalsAthleteId", intervalsAthleteId);
-    localStorage.setItem("intervalsApiKey", intervalsApiKey);
+  const saveConfig = async () => {
+    if (currentUser?.uid) {
+      await saveUserIntervalsCredentials(currentUser.uid, intervalsAthleteId, intervalsApiKey);
+    }
     setShowExportConfig(false);
     
     if (configPendingAction === "EXPORT") {
@@ -373,15 +383,24 @@ export default function AthletePlanner() {
     try {
       const data = await fetchCoachedAthletes(intervalsAthleteId, intervalsApiKey);
       if (Array.isArray(data) && data.length > 0) {
-        // Map intervals.icu athletes to our format
-        const fetchedAthletes = data.map((a: any, index: number) => {
-          const id = a.id || a.athlete?.id || a.athlete_id || `unknown-${index}`;
+        const mappedAthletes = data.map((a: any, index: number) => {
+          const rawId = a.athlete_id || a.athlete?.id || a.id || `unknown-${index}`;
+          const id = String(rawId);
           const name = a.athlete_name || a.name || a.athlete?.name || (a.firstname ? `${a.firstname} ${a.lastname || ''}`.trim() : `Athlète ${index + 1}`);
           const ctl = Math.round(a.fitness ?? a.ctl ?? a.icu?.ctl ?? 0);
           const atl = Math.round(a.fatigue ?? a.atl ?? a.icu?.atl ?? 0);
           const form = Math.round(a.form ?? a.icu?.form ?? (ctl - atl));
           return { id, name, ctl, atl, form };
         });
+
+        const uniqueById: Record<string, any> = {};
+        for (const ath of mappedAthletes) {
+          const existing = uniqueById[ath.id];
+          if (!existing || ath.ctl > existing.ctl) {
+            uniqueById[ath.id] = ath;
+          }
+        }
+        const fetchedAthletes: any[] = Object.values(uniqueById);
         
         if (!fetchedAthletes.find((a: any) => a.id === intervalsAthleteId)) {
           fetchedAthletes.unshift({ id: intervalsAthleteId, name: "Moi", ctl: 0, atl: 0, form: 0 });
@@ -716,29 +735,40 @@ export default function AthletePlanner() {
     }
   };
 
+  if (!authLoading && currentUser && !isAdmin) {
+    return null;
+  }
+
   return (
-    <div className="py-0 md:py-4">
-      <div className="space-y-8">
+    <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-7">
+      <div className="space-y-6">
         
         {/* Header / Controls */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-4 border-b border-[var(--border-subtle)]">
+        <header className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => router.push('/')}
-              className="btn btn-secondary px-3 py-2"
+              className="btn btn-secondary !p-2.5 !rounded-xl"
               title="Retour aux athlètes"
             >
               <ArrowLeft size={18} />
             </button>
             <div>
-              <h1 className="text-[2rem] font-bold text-[var(--text-primary)] m-0 leading-tight">
-                {athleteStats ? athleteStats.name : "Athlète"}
-              </h1>
-              <p className="text-[var(--text-secondary)] mt-1 text-sm font-medium">Profil & Planification</p>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-2xl font-extrabold text-[var(--text-primary)] m-0 tracking-tight">
+                  {athleteStats ? athleteStats.name : "Athlète"}
+                </h1>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-orange-500/10 text-[var(--color-primary)] border border-orange-500/20">
+                  PROFIL & MACROCYCLE
+                </span>
+              </div>
+              <p className="text-[var(--text-secondary)] mt-0.5 text-sm font-medium m-0">
+                Analyse physiologique, courbes de durabilité et calendrier de saison
+              </p>
             </div>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
 
             <button
               type="button"
@@ -747,9 +777,10 @@ export default function AthletePlanner() {
               className={`btn btn-secondary ${isFetchingAthletes ? 'opacity-50 cursor-not-allowed' : ''}`}
               title="Synchroniser les athlètes depuis Intervals.icu"
             >
-              <svg className={`w-5 h-5 ${isFetchingAthletes ? 'lucide-spin text-[var(--color-primary)]' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <svg className={`w-4 h-4 ${isFetchingAthletes ? 'lucide-spin text-[var(--color-primary)]' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
               </svg>
+              <span className="sm:hidden">Synchroniser</span>
             </button>
             
             <button
@@ -758,7 +789,7 @@ export default function AthletePlanner() {
               className="btn btn-secondary w-full sm:w-auto"
               title="Comparateur de traces & Virtual Partner"
             >
-              <GitCompare size={18} className="text-orange-600" />
+              <GitCompare size={17} className="text-[var(--color-primary)]" />
               Comparateur Course
             </button>
             
@@ -767,7 +798,7 @@ export default function AthletePlanner() {
               onClick={() => router.push(`/athletes/${athleteId}/coach`)}
               className="btn btn-primary w-full sm:w-auto"
             >
-              <Settings size={18} />
+              <Zap size={17} />
               Générateur de Plan IA
             </button>
           </div>

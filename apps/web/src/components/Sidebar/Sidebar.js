@@ -1,59 +1,110 @@
 "use client";
 
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LayoutDashboard, Map, Compass, Settings, Apple, HelpCircle, Calendar, GitCompare } from 'lucide-react';
+import { Compass, Apple, Mountain, GitCompare, Sparkles, HelpCircle, Settings } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
 export default function Sidebar() {
   const { currentUser, isAdmin } = useAuth();
   const pathname = usePathname();
 
-  if (!currentUser) return null;
+  if (!currentUser || !pathname || pathname === '/' || pathname === '/login') {
+    return null;
+  }
 
   return (
     <aside className={styles.sidebar}>
-      <Link href="/dashboard" className={`${styles.navItem} ${pathname === '/dashboard' ? styles.active : ''}`}>
-        <LayoutDashboard size={20} className={styles.icon} />
-        Dashboard
-      </Link>
+      <div className={styles.section}>
+        <div className={styles.sectionLabel}>Préparation Course</div>
+        <nav className={styles.navMenu}>
+          <Link 
+            href="/dashboard" 
+            className={`${styles.navLink} ${pathname === '/dashboard' || pathname?.startsWith('/editor/') ? styles.active : ''}`}
+          >
+            <div className={styles.iconBox}>
+              <Compass size={17} />
+            </div>
+            <span>Mes Roadbooks</span>
+          </Link>
+          <Link 
+            href="/official-traces" 
+            className={`${styles.navLink} ${pathname?.startsWith('/official-traces') ? styles.active : ''}`}
+          >
+            <div className={styles.iconBox}>
+              <Mountain size={17} />
+            </div>
+            <span>Traces Officielles</span>
+          </Link>
+          <Link 
+            href="/nutrition" 
+            className={`${styles.navLink} ${pathname === '/nutrition' ? styles.active : ''}`}
+          >
+            <div className={styles.iconBox}>
+              <Apple size={17} />
+            </div>
+            <span>Base Nutrition</span>
+          </Link>
+        </nav>
+      </div>
 
-      <a href="/coach/comparator" className={`${styles.navItem} ${pathname.startsWith('/coach/comparator') ? styles.active : ''}`}>
-        <GitCompare size={20} className={styles.icon} />
-        Comparateur
-      </a>
-      
-      {/* Lien vers le Plan Builder (Réservé aux admins) */}
-      {isAdmin && (
-        <a href="/coach" className={`${styles.navItem} ${pathname.startsWith('/coach') && !pathname.startsWith('/coach/comparator') ? styles.active : ''}`}>
-          <Calendar size={20} className={styles.icon} />
-          Coaching & Plans
-        </a>
-      )}
-      
+      <div className={styles.section}>
+        <div className={styles.sectionLabel}>Performance & Lab</div>
+        <nav className={styles.navMenu}>
+          <a 
+            href="/coach/comparator" 
+            className={styles.navLink}
+          >
+            <div className={`${styles.iconBox} ${styles.iconBoxCoral}`}>
+              <GitCompare size={17} />
+            </div>
+            <div className={styles.linkContent}>
+              <span>Comparateur GPX</span>
+              <span className={styles.linkBadge}>LAB</span>
+            </div>
+          </a>
+          {isAdmin && (
+            <a 
+              href="/coach" 
+              className={styles.navLink}
+            >
+              <div className={`${styles.iconBox} ${styles.iconBoxMint}`}>
+                <Sparkles size={17} />
+              </div>
+              <div className={styles.linkContent}>
+                <span>Coaching & Plans</span>
+                <span className={styles.linkBadgeMint}>ADMIN</span>
+              </div>
+            </a>
+          )}
+        </nav>
+      </div>
 
-      <Link href="/official-traces" className={`${styles.navItem} ${pathname === '/official-traces' ? styles.active : ''}`}>
-        <Compass size={20} className={styles.icon} />
-        Traces Officielles
-      </Link>
-
-      <Link href="/nutrition" className={`${styles.navItem} ${pathname === '/nutrition' ? styles.active : ''}`}>
-        <Apple size={20} className={styles.icon} />
-        Base Nutrition
-      </Link>
-      
-      <div className={styles.divider}></div>
-      
-      <Link href="/help" className={`${styles.navItem} ${pathname === '/help' ? styles.active : ''}`}>
-        <HelpCircle size={20} className={styles.icon} />
-        Aide
-      </Link>
-      
-      <Link href="/settings" className={`${styles.navItem} ${pathname === '/settings' ? styles.active : ''}`}>
-        <Settings size={20} className={styles.icon} />
-        Paramètres
-      </Link>
+      <div className={`${styles.section} ${styles.bottomSection}`}>
+        <div className={styles.sectionLabel}>Espace Personnel</div>
+        <nav className={styles.navMenu}>
+          <Link 
+            href="/help" 
+            className={`${styles.navLink} ${pathname === '/help' ? styles.active : ''}`}
+          >
+            <div className={styles.iconBox}>
+              <HelpCircle size={17} />
+            </div>
+            <span>Guide & Aide</span>
+          </Link>
+          <Link 
+            href="/settings" 
+            className={`${styles.navLink} ${pathname === '/settings' ? styles.active : ''}`}
+          >
+            <div className={styles.iconBox}>
+              <Settings size={17} />
+            </div>
+            <span>Paramètres</span>
+          </Link>
+        </nav>
+      </div>
     </aside>
   );
 }

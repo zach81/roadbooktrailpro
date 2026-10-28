@@ -1,125 +1,702 @@
 .dashboardContainer {
-  padding: 2rem 0;
+  padding: 1.75rem 1.5rem 4rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.header {
+/* Unified Hero Header Card */
+.heroHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-subtle);
+  gap: 1.25rem;
+  padding: 1.35rem 1.6rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
 }
 
-.header h1 {
-  font-size: 2rem;
+.heroTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.heroIconWrap {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(255, 90, 54, 0.14) 0%, rgba(255, 90, 54, 0.05) 100%);
+  border: 1px solid rgba(255, 90, 54, 0.22);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.heroTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.headerTitle {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
   color: var(--text-primary);
+  letter-spacing: -0.025em;
   margin: 0;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
+.heroPill {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(20, 195, 142, 0.12);
+  color: #0FA876;
+  border: 1px solid rgba(20, 195, 142, 0.25);
 }
 
-.roadbookCard {
-  padding: 24px;
+.headerSubtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0.2rem 0 0;
+}
+
+.heroActions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+/* Global KPI Bar */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 1.35fr;
+  gap: 1rem;
+}
+
+.kpiCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.kpiIconCoral,
+.kpiIconAmber,
+.kpiIconMint {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kpiIconCoral {
+  background: rgba(255, 90, 54, 0.1);
+  color: var(--color-primary);
+}
+
+.kpiIconAmber {
+  background: rgba(245, 158, 11, 0.12);
+  color: #D97706;
+}
+
+.kpiIconMint {
+  background: rgba(20, 195, 142, 0.12);
+  color: #0FA876;
+}
+
+.kpiLabel {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.kpiValue {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.15;
+}
+
+.kpiValue small {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.quickToolsCard {
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-surface-elevated) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  transition: transform 0.2s ease;
-  background-color: var(--bg-surface);
-  border-radius: var(--radius-lg);
+  justify-content: center;
+  gap: 0.5rem;
   box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-subtle);
-  height: 100%;
 }
 
-.roadbookCard:hover {
-  transform: translateY(-2px);
+.quickToolsLabel {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+}
+
+.quickToolsLinks {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.quickToolChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.quickToolChip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.chipIconCoral {
+  color: var(--color-primary);
+}
+
+.chipIconMint {
+  color: #14C38E;
+}
+
+/* Search & Filter Toolbar */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.searchBox {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 0.65rem 1rem 0.65rem 2.4rem !important;
+  border-radius: var(--radius-full) !important;
+  border: 1px solid var(--border-subtle) !important;
+  background: var(--bg-surface) !important;
+  font-size: 0.85rem !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.filterPills {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-surface-elevated);
+  padding: 4px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+}
+
+.filterPill {
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.filterPill:hover {
+  color: var(--text-primary);
+}
+
+.filterPillActive {
+  background: var(--bg-surface);
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Athletes Grid */
+.athletesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.25rem;
+}
+
+.athleteCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+.athleteCard:hover {
   box-shadow: var(--shadow-md);
+  border-color: rgba(255, 90, 54, 0.3);
+  transform: translateY(-2px);
 }
 
 .cardHeader {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 0.75rem;
 }
 
-.cardHeaderTitle {
+.athleteIdentity {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 1.25rem;
-  margin: 0;
-  cursor: pointer;
-  color: var(--text-primary);
+  gap: 0.8rem;
+  text-decoration: none;
+  min-width: 0;
 }
 
-.cardHeaderTitle:hover {
-  color: var(--color-primary);
-}
-
-.iconPrimary {
-  color: var(--color-primary);
-}
-
-.cardBody {
+.avatarCircle {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #FF5A36 0%, #FF7A59 100%);
+  color: #FFFFFF;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
   display: flex;
-  gap: 24px;
-  background-color: var(--bg-surface-elevated);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 3px 10px rgba(255, 90, 54, 0.25);
 }
 
-.stat {
+.athleteNameWrap {
+  min-width: 0;
+}
+
+.athleteName {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--transition-fast);
+}
+
+.athleteIdentity:hover .athleteName {
+  color: var(--color-primary);
+}
+
+.athleteIdTag {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.statusBadge {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.badgeOptimal {
+  background: rgba(20, 195, 142, 0.12);
+  color: #0FA876;
+  border: 1px solid rgba(20, 195, 142, 0.25);
+}
+
+.badgeFresh {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563EB;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+.badgeNeutral {
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.badgeLoad {
+  background: rgba(245, 158, 11, 0.12);
+  color: #D97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.badgeFatigue {
+  background: rgba(239, 68, 68, 0.1);
+  color: #DC2626;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+/* PMC Box */
+.pmcBox {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
+  gap: 0.65rem;
 }
 
-.statLabel {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
+.pmcColumns {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
 }
 
-.statValue {
-  font-size: 1.25rem;
+.pmcCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.pmcDivider {
+  width: 1px;
+  height: 28px;
+  background: var(--border-subtle);
+}
+
+.pmcLabel {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.pmcValue {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.valCtl {
+  color: var(--color-primary);
+}
+
+.valAtl {
+  color: #64748B;
+}
+
+.valTsbPos {
+  color: #10B981;
+}
+
+.valTsbNeutral {
+  color: #F59E0B;
+}
+
+.valTsbNeg {
+  color: #EF4444;
+}
+
+.pmcBarTrack {
+  height: 5px;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.pmcBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #FF5A36 0%, #14C38E 100%);
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+/* Physiological 2x2 Grid */
+.physioGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+}
+
+.physioItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+
+.physioIconCoral { color: var(--color-primary); flex-shrink: 0; }
+.physioIconMint { color: #14C38E; flex-shrink: 0; }
+.physioIconRose { color: #F43F5E; flex-shrink: 0; }
+.physioIconSlate { color: #64748B; flex-shrink: 0; }
+
+.physioLabel {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.1;
+}
+
+.physioVal {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
+/* Card Footer */
 .cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-subtle);
   margin-top: auto;
 }
 
-.loader {
+.secondaryActions {
   display: flex;
-  justify-content: center;
   align-items: center;
-  height: 50vh;
-  font-family: 'Outfit', sans-serif;
-  font-size: 1.25rem;
-  font-weight: 500;
-  color: var(--text-secondary);
+  gap: 0.4rem;
 }
 
-@media (max-width: 768px) {
-  .header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
+.actionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.actionChip:hover {
+  color: var(--color-primary);
+  border-color: rgba(255, 90, 54, 0.3);
+  background: rgba(255, 90, 54, 0.05);
+}
+
+.primaryActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.48rem 0.95rem;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #FFFFFF !important;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(255, 90, 54, 0.28);
+  transition: all var(--transition-fast);
+}
+
+.primaryActionBtn:hover {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+
+/* Empty & Skeleton States */
+.skeletonCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem;
+  height: 310px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  animation: pulse 1.6s infinite ease-in-out;
+}
+
+.skeletonHeader { height: 44px; background: var(--bg-surface-elevated); border-radius: 10px; }
+.skeletonMetrics { height: 140px; background: var(--bg-surface-elevated); border-radius: 10px; }
+.skeletonFooter { height: 36px; background: var(--bg-surface-elevated); border-radius: 10px; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.emptyState {
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 3rem 1.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.emptyIcon {
+  color: var(--color-primary);
+  opacity: 0.7;
+}
+
+/* Modal */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modalCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 460px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.modalTitle {
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.modalSubtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0.2rem 0 0;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+@media (max-width: 1024px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, 1fr);
   }
-  
-  .grid {
+}
+
+@media (max-width: 640px) {
+  .dashboardContainer {
+    padding: 1rem 0.75rem 3rem;
+  }
+  .kpiGrid {
     grid-template-columns: 1fr;
-    gap: 16px;
+  }
+  .athletesGrid {
+    grid-template-columns: 1fr;
+  }
+  .cardFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .secondaryActions {
+    justify-content: space-between;
+  }
+  .primaryActionBtn {
+    justify-content: center;
   }
 }

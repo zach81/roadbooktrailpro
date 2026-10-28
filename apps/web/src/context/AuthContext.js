@@ -26,7 +26,6 @@ export function AuthProvider({ children }) {
   // Sign up with Email
   async function signup(email, password) {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    // Créer un document utilisateur dans Firestore
     await setDoc(doc(db, "users", userCredential.user.uid), {
       email: userCredential.user.email,
       createdAt: new Date(),
@@ -47,7 +46,6 @@ export function AuthProvider({ children }) {
     });
     const result = await signInWithPopup(auth, provider);
     
-    // Check if user doc exists, if not create it
     const userDocRef = doc(db, "users", result.user.uid);
     const docSnap = await getDoc(userDocRef);
     if (!docSnap.exists()) {
@@ -62,10 +60,23 @@ export function AuthProvider({ children }) {
 
   // Logout
   function logout() {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("intervalsAthleteId");
+        localStorage.removeItem("intervalsApiKey");
+      } catch {}
+    }
     return signOut(auth);
   }
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("intervalsAthleteId");
+        localStorage.removeItem("intervalsApiKey");
+      } catch {}
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
@@ -77,7 +88,6 @@ export function AuthProvider({ children }) {
             if (userDoc.data().role === 'admin') {
               setIsAdmin(true);
             } else if (isEmailAdmin) {
-              // Synchroniser le statut admin dans Firestore pour les règles de sécurité
               await setDoc(doc(db, "users", user.uid), { role: 'admin' }, { merge: true });
               setIsAdmin(true);
             } else {

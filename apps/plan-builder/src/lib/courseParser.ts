@@ -46,6 +46,13 @@ export interface PacingAnalysis {
   flatDeltaSec: number; // time delta on flat
   stoppedTimeActualSec: number;
   stoppedTimePlannedSec: number;
+  firstHalfDeltaSec: number;
+  secondHalfDeltaSec: number;
+  bestSplitKm: number;
+  bestSplitGainSec: number;
+  worstSplitKm: number;
+  worstSplitLossSec: number;
+  cardiacDriftPct?: number;
 }
 
 export interface ParsedCourse {
@@ -467,12 +474,13 @@ export async function parseFITBuffer(buffer: ArrayBuffer, fileName: string): Pro
  */
 export function createSingleCourseComparison(course: ParsedCourse): ComparisonResult {
   const pts = course.points;
-  const sampleCount = Math.max(60, Math.min(220, Math.round(course.totalDistanceKm * 6)));
+  // High-resolution sampling density (~1 point every 20m, 300 to 3000 points)
+  const sampleCount = Math.max(300, Math.min(3000, Math.round(course.totalDistanceKm * 50)));
   const stepKm = course.totalDistanceKm / Math.max(1, sampleCount - 1);
 
   const dualPts: number[][] = [];
   for (let i = 0; i < sampleCount; i++) {
-    const km = Math.round(i * stepKm * 100) / 100;
+    const km = Math.round(i * stepKm * 1000) / 1000;
     let p = pts[0];
     for (let j = 0; j < pts.length; j++) {
       if (pts[j].distKm >= km) {
@@ -483,16 +491,16 @@ export function createSingleCourseComparison(course: ParsedCourse): ComparisonRe
 
     dualPts.push([
       km,
-      Math.round(p.lat * 100000) / 100000,
-      Math.round(p.lon * 100000) / 100000,
+      Math.round(p.lat * 1000000) / 1000000,
+      Math.round(p.lon * 1000000) / 1000000,
       Math.round(p.ele * 10) / 10,
-      p.elapsedSec,
+      Math.round(p.elapsedSec * 10) / 10,
       p.hr || 0,
       km,
-      Math.round(p.lat * 100000) / 100000,
-      Math.round(p.lon * 100000) / 100000,
+      Math.round(p.lat * 1000000) / 1000000,
+      Math.round(p.lon * 1000000) / 1000000,
       Math.round(p.ele * 10) / 10,
-      p.elapsedSec,
+      Math.round(p.elapsedSec * 10) / 10,
       p.hr || 0,
       0,
     ]);
@@ -648,7 +656,7 @@ export function getPointAtDist(pts: TrackPoint[], targetKm: number): TrackPoint 
     lat: p1.lat + (p2.lat - p1.lat) * ratio,
     lon: p1.lon + (p2.lon - p1.lon) * ratio,
     ele: Math.round((p1.ele + (p2.ele - p1.ele) * ratio) * 10) / 10,
-    elapsedSec: Math.round(p1.elapsedSec + (p2.elapsedSec - p1.elapsedSec) * ratio),
+    elapsedSec: Math.round((p1.elapsedSec + (p2.elapsedSec - p1.elapsedSec) * ratio) * 10) / 10,
     distKm: targetKm,
     hr: p1.hr && p2.hr ? Math.round(p1.hr + (p2.hr - p1.hr) * ratio) : (p1.hr || p2.hr),
     speedKmH: p1.speedKmH && p2.speedKmH ? p1.speedKmH + (p2.speedKmH - p1.speedKmH) * ratio : p1.speedKmH,
@@ -667,9 +675,10 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
   const totalDist1 = course1.totalDistanceKm;
   const totalDist2 = course2.totalDistanceKm;
 
-  // Choose sampling density (around 100 to 180 points for optimal chart/map smoothness)
-  const sampleCount = Math.max(80, Math.min(220, Math.round(totalDist1 * 7)));
-  const stepKm = totalDist1 / (sampleCount - 1);
+  // High-resolution sampling density (~1 point every 20m, 300 to 3000 points)
+  // Provides ultra-fine granularity for GPX profiles and sub-second time difference curves
+  const sampleCount = Math.max(300, Math.min(3000, Math.round(totalDist1 * 50)));
+  const stepKm = totalDist1 / Math.max(1, sampleCount - 1);
 
   const dualPts: number[][] = [];
   const errors: number[] = [];
@@ -677,7 +686,7 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
   let maxErrorKm = 0;
 
   for (let i = 0; i < sampleCount; i++) {
-    const km1 = Math.round(i * stepKm * 100) / 100;
+    const km1 = Math.round(i * stepKm * 1000) / 1000;
     const p1 = getPointAtDist(refPts, km1);
 
     // Corresponding distance on Trace 2 (proportionally or by distance)
@@ -693,17 +702,17 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
     }
 
     dualPts.push([
-      Math.round(km1 * 100) / 100,
-      Math.round(p1.lat * 100000) / 100000,
-      Math.round(p1.lon * 100000) / 100000,
+      km1,
+      Math.round(p1.lat * 1000000) / 1000000,
+      Math.round(p1.lon * 1000000) / 1000000,
       Math.round(p1.ele * 10) / 10,
-      p1.elapsedSec,
+      Math.round(p1.elapsedSec * 10) / 10,
       p1.hr || 0,
-      Math.round(p2.distKm * 100) / 100,
-      Math.round(p2.lat * 100000) / 100000,
-      Math.round(p2.lon * 100000) / 100000,
+      Math.round(p2.distKm * 1000) / 1000,
+      Math.round(p2.lat * 1000000) / 1000000,
+      Math.round(p2.lon * 1000000) / 1000000,
       Math.round(p2.ele * 10) / 10,
-      p2.elapsedSec,
+      Math.round(p2.elapsedSec * 10) / 10,
       p2.hr || 0,
       errM,
     ]);
@@ -833,15 +842,48 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
   // Adherence score: consistency of speed ratio vs reference
   let ratioVarianceSum = 0;
   let splitCount = 0;
-  kmSplits.forEach((sp) => {
+  let firstHalfDeltaSec = 0;
+  let secondHalfDeltaSec = 0;
+  let bestSplitKm = 1;
+  let bestSplitGainSec = -Infinity;
+  let worstSplitKm = 1;
+  let worstSplitLossSec = Infinity;
+  const midKm = Math.ceil(kmSplits.length / 2);
+
+  kmSplits.forEach((sp, idx) => {
     if (sp.spd22 > 0 && sp.spd26 > 0) {
       const ratio = sp.spd26 / sp.spd22;
       ratioVarianceSum += Math.abs(ratio - 1.0);
       splitCount++;
     }
+    if (idx < midKm) {
+      firstHalfDeltaSec += sp.gain_s;
+    } else {
+      secondHalfDeltaSec += sp.gain_s;
+    }
+    if (sp.gain_s > bestSplitGainSec) {
+      bestSplitGainSec = sp.gain_s;
+      bestSplitKm = sp.km;
+    }
+    if (sp.gain_s < worstSplitLossSec) {
+      worstSplitLossSec = sp.gain_s;
+      worstSplitKm = sp.km;
+    }
   });
   const avgDev = splitCount > 0 ? ratioVarianceSum / splitCount : 0.15;
   const adherenceScore = Math.max(45, Math.min(99, Math.round(100 - avgDev * 95)));
+
+  // Calculate cardiac drift % on candidate course (if HR data available)
+  let cardiacDriftPct: number | undefined = undefined;
+  const hrPts = candPts.filter((p) => p.hr && p.hr > 50);
+  if (hrPts.length >= 20) {
+    const halfIdx = Math.floor(hrPts.length / 2);
+    const firstHalfAvgHr = hrPts.slice(0, halfIdx).reduce((acc, p) => acc + (p.hr || 0), 0) / halfIdx;
+    const secondHalfAvgHr = hrPts.slice(halfIdx).reduce((acc, p) => acc + (p.hr || 0), 0) / (hrPts.length - halfIdx);
+    if (firstHalfAvgHr > 0) {
+      cardiacDriftPct = Math.round(((secondHalfAvgHr - firstHalfAvgHr) / firstHalfAvgHr) * 1000) / 10;
+    }
+  }
 
   const pacingAnalysis: PacingAnalysis = {
     adherenceScore,
@@ -850,6 +892,13 @@ export function compareCourses(course1: ParsedCourse, course2: ParsedCourse): Co
     flatDeltaSec,
     stoppedTimeActualSec,
     stoppedTimePlannedSec,
+    firstHalfDeltaSec,
+    secondHalfDeltaSec,
+    bestSplitKm,
+    bestSplitGainSec: bestSplitGainSec === -Infinity ? 0 : bestSplitGainSec,
+    worstSplitKm,
+    worstSplitLossSec: worstSplitLossSec === Infinity ? 0 : worstSplitLossSec,
+    cardiacDriftPct,
   };
 
   // Generate notable landmark annotations

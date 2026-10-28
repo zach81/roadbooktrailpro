@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, BookOpen, Mountain, Clock, MapPin, Search, 
   ChevronRight, Sparkles, CheckCircle2, Loader2, Upload,
-  AlertCircle, ShieldCheck, Flag, ArrowRight, Zap, Activity
+  AlertCircle, ShieldCheck, Flag, ArrowRight, Zap, Activity, Trophy
 } from 'lucide-react';
 import styles from './RoadbookSelectModal.module.css';
 import { 
@@ -14,13 +14,20 @@ import {
   RoadbookSummary, 
   RoadbookDoc 
 } from '@/lib/roadbookPacing';
-import { ParsedCourse, parseCourseFile } from '@/lib/courseParser';
+import { ParsedCourse, parseCourseFile, parseIntervalsActivityToCourse } from '@/lib/courseParser';
+import { 
+  fetchIntervalsActivities, 
+  fetchActivityStreams, 
+  analyzeRaceActivitiesForCalibration,
+  IntervalsActivity 
+} from '@/lib/intervalsApi';
 import { useAuth } from '@/context/AuthContext';
+import { getUserIntervalsCredentials } from '@/lib/firebaseUtils';
 
 interface RoadbookSelectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectRoadbook: (course: ParsedCourse, raceFitCourse?: ParsedCourse) => void;
+  onSelectRoadbook: (course: ParsedCourse, raceFitCourse?: ParsedCourse, rawRoadbookDoc?: RoadbookDoc) => void;
 }
 
 export default function RoadbookSelectModal({
@@ -36,12 +43,17 @@ export default function RoadbookSelectModal({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [paceProfile, setPaceProfile] = useState<'target' | 'fast' | 'slow'>('target');
 
-  // Optional simultaneous .FIT file upload
+  // Optional simultaneous .FIT file upload or Intervals.icu "Course" activity selection
   const [fitFile, setFitFile] = useState<File | null>(null);
   const [loadingFit, setLoadingFit] = useState<boolean>(false);
   const [fitError, setFitError] = useState<string | null>(null);
 
-  // Fetch Roadbooks
+  // Intervals.icu detected "Course" activities
+  const [raceActivities, setRaceActivities] = useState<IntervalsActivity[]>([]);
+  const [selectedRaceActivityId, setSelectedRaceActivityId] = useState<string>('');
+  const [modulateWithRacesOnLoad, setModulateWithRacesOnLoad] = useState<boolean>(false);
+
+  // Fetch Roadbooks & Intervals "Course" activities
   useEffect(() => {
     if (!isOpen) return;
     setIsLoading(true);
@@ -59,6 +71,31 @@ export default function RoadbookSelectModal({
       .finally(() => {
         setIsLoading(false);
       });
+
+    // Charger automatiquement les sorties "Course" d'Intervals.icu propres au compte connecté
+    if (currentUser?.uid) {
+      getUserIntervalsCredentials(currentUser.uid).then((creds) => {
+        const storedId = creds.athleteId;
+        const storedKey = creds.apiKey;
+        if (storedId && storedKey) {
+          const now = new Date();
+          const oldest = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          const newest = now.toISOString().split('T')[0];
+          fetchIntervalsActivities(storedId, storedKey, oldest, newest)
+            .then((acts) => {
+              const races = acts.filter((a) => a.isRace && a.has_gps);
+              setRaceActivities(races);
+            })
+            .catch(() => {
+              // silencieux si pas de connexion
+            });
+        } else {
+          setRaceActivities([]);
+        }
+      });
+    } else {
+      setRaceActivities([]);
+    }
   }, [isOpen, currentUser?.uid]);
 
   // Filtered roadbooks
@@ -74,25 +111,56 @@ export default function RoadbookSelectModal({
     return roadbooks.find((rb) => rb.id === selectedRbId) || roadbooks[0];
   }, [roadbooks, selectedRbId]);
 
+  const raceCalibration = useMemo(() => {
+    if (raceActivities.length === 0) return null;
+    return analyzeRaceActivitiesForCalibration(
+      raceActivities,
+      selectedRoadbook?.distanceKm,
+      selectedRoadbook?.elevationGainM,
+      selectedRoadbook?.waypointsCount
+    );
+  }, [raceActivities, selectedRoadbook]);
+
   const handleFitDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (file) setFitFile(file);
+    if (file) {
+      setFitFile(file);
+      setSelectedRaceActivityId('');
+    }
   };
 
   const handleFitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setFitFile(file);
+    if (file) {
+      setFitFile(file);
+      setSelectedRaceActivityId('');
+    }
   };
 
   const handleConfirm = async () => {
     if (!selectedRoadbook) return;
 
     try {
-      const fullDoc = await fetchRoadbookById(selectedRoadbook.id);
+      let fullDoc = await fetchRoadbookById(selectedRoadbook.id);
       if (!fullDoc) {
         alert("Impossible de charger les données détaillées de ce Roadbook.");
         return;
+      }
+
+      // Si l'utilisateur a activé la modulation par ses sorties "Course"
+      if (modulateWithRacesOnLoad && raceCalibration) {
+        fullDoc = {
+          ...fullDoc,
+          targetTime: raceCalibration.estimatedTargetHoursForRoadbook || fullDoc.targetTime,
+          itraIndex: raceCalibration.avgEmpiricalItra,
+          fatiguePercent: raceCalibration.recommendedFatiguePercent,
+          pacingStrategy: raceCalibration.recommendedPacingStrategy,
+          upCostDivider: raceCalibration.recommendedUpCostDivider,
+          downCostModifier: raceCalibration.recommendedDownCostModifier,
+          walkThreshold: raceCalibration.recommendedWalkThreshold,
+          descentThreshold: raceCalibration.recommendedDescentThreshold,
+        };
       }
 
       const roadbookCourse = convertRoadbookToParsedCourse(fullDoc, { paceProfile });
@@ -107,9 +175,24 @@ export default function RoadbookSelectModal({
           setLoadingFit(false);
           return;
         }
+      } else if (selectedRaceActivityId) {
+        setLoadingFit(true);
+        try {
+          const act = raceActivities.find((a) => String(a.id) === selectedRaceActivityId);
+          const creds = await getUserIntervalsCredentials(currentUser?.uid);
+          const storedKey = creds.apiKey;
+          if (act && storedKey) {
+            const streams = await fetchActivityStreams(act.id, storedKey);
+            parsedFitCourse = parseIntervalsActivityToCourse(act, streams);
+          }
+        } catch (err: any) {
+          setFitError(`Erreur chargement sortie Course : ${err.message || err}`);
+          setLoadingFit(false);
+          return;
+        }
       }
 
-      onSelectRoadbook(roadbookCourse, parsedFitCourse);
+      onSelectRoadbook(roadbookCourse, parsedFitCourse, fullDoc);
       onClose();
     } catch (err: any) {
       alert(`Erreur : ${err.message || err}`);
@@ -269,6 +352,55 @@ export default function RoadbookSelectModal({
                     </button>
                   </div>
                 </div>
+
+                {/* Modulation automatique via les sorties intitulées "Course" */}
+                {raceCalibration && (
+                  <div className="mt-3 p-2.5 rounded-xl bg-amber-50/80 border border-amber-200">
+                    <label className="flex items-start gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={modulateWithRacesOnLoad}
+                        onChange={(e) => setModulateWithRacesOnLoad(e.target.checked)}
+                        className="mt-0.5 w-3.5 h-3.5 rounded text-orange-600 focus:ring-orange-500"
+                      />
+                      <div className="text-[11px] leading-tight">
+                        <span className="font-extrabold text-amber-900 flex items-center gap-1">
+                          <Trophy size={12} className="text-orange-600" />
+                          Moduler les estimations depuis mes {raceCalibration.racesCount} sortie(s) « Course »
+                        </span>
+                        <span className="text-amber-800/90 block mt-0.5">
+                          ITRA observé <strong>{raceCalibration.avgEmpiricalItra}</strong> • Fatigue <strong>{raceCalibration.recommendedFatiguePercent}%</strong>
+                          {raceCalibration.estimatedTargetFormatted ? ` • Temps estimé : ${raceCalibration.estimatedTargetFormatted}` : ''}
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Optional Race Activity Selector from Intervals.icu */}
+            {raceActivities.length > 0 && (
+              <div className="mt-2.5">
+                <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
+                  <Trophy size={12} className="text-orange-500" />
+                  <span>Comparer directement avec une sortie « Course » (Intervals.icu) :</span>
+                </label>
+                <select
+                  value={selectedRaceActivityId}
+                  onChange={(e) => {
+                    setSelectedRaceActivityId(e.target.value);
+                    if (e.target.value) setFitFile(null);
+                  }}
+                  className="w-full text-xs font-bold px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 outline-none focus:border-orange-500 cursor-pointer"
+                >
+                  <option value="">-- Ou sélectionner une sortie Course Intervals.icu --</option>
+                  {raceActivities.map((act) => (
+                    <option key={act.id} value={String(act.id)}>
+                      🏆 {act.name} ({(act.distance / 1000).toFixed(1)} km • +{Math.round(act.total_elevation_gain)}m • {act.start_date_local?.split('T')[0]})
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

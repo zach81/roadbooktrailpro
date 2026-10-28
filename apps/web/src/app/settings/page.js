@@ -5,12 +5,13 @@ import { useAuth } from '@/context/AuthContext';
 import { updateProfile } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage } from '@/lib/firebase';
-import { User, Upload, Loader2, Info, Activity, Mountain, TrendingUp, TrendingDown, Footprints, Droplets, Utensils, Coffee, HeartPulse, Save } from 'lucide-react';
+import { User, Upload, Loader2, Info, Activity, Mountain, TrendingUp, TrendingDown, Footprints, Droplets, Utensils, Coffee, HeartPulse, Save, Key, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, HelpCircle, Trophy, Zap } from 'lucide-react';
 import styles from './settings.module.css';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { deriveConfigFromITRA } from '@/lib/roadbookCalculator';
+import { normalizeIntervalsApiKey, normalizeIntervalsAthleteId, verifyIntervalsConnection, profileAthleteFromIntervalsRaces } from '@/lib/intervalsClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Tooltip = ({ text }) => {
@@ -59,15 +60,49 @@ export default function SettingsPage() {
   const [waterTarget, setWaterTarget] = useState("");
   const [caffeineTarget, setCaffeineTarget] = useState("");
 
+  // Connexion Intervals.icu personnelle (propre à ce compte)
+  const [intervalsAthleteId, setIntervalsAthleteId] = useState("");
+  const [intervalsApiKey, setIntervalsApiKey] = useState("");
+  const [testingIntervals, setTestingIntervals] = useState(false);
+  const [profilingIntervals, setProfilingIntervals] = useState(false);
+  const [intervalsStatus, setIntervalsStatus] = useState(null);
+  const [calibProfileResult, setCalibProfileResult] = useState(null);
+  const [showIntervalsHelp, setShowIntervalsHelp] = useState(true);
+
   const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
     if (!currentUser) return;
     async function loadUserData() {
       try {
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        const uid = currentUser.uid;
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('intervalsAthleteId');
+          localStorage.removeItem('intervalsApiKey');
+        }
+
+        const userDoc = await getDoc(doc(db, "users", uid));
+        let coachDoc = null;
+        try {
+          coachDoc = await getDoc(doc(db, "coaches", uid));
+        } catch {
+          // Ignoré si non-admin (coaches/{uid} est réservé aux administrateurs)
+        }
+
+        let foundIntervalsId = "";
+        let foundIntervalsKey = "";
+
+        if (coachDoc && coachDoc.exists()) {
+          const cData = coachDoc.data();
+          if (cData.intervalsAthleteId) foundIntervalsId = String(cData.intervalsAthleteId).trim();
+          if (cData.intervalsApiKey) foundIntervalsKey = String(cData.intervalsApiKey).trim();
+        }
+
         if (userDoc.exists()) {
           const data = userDoc.data();
+
+          if (!foundIntervalsId && data.intervalsAthleteId) foundIntervalsId = String(data.intervalsAthleteId).trim();
+          if (!foundIntervalsKey && data.intervalsApiKey) foundIntervalsKey = String(data.intervalsApiKey).trim();
 
           let defaultConfig = null;
           if (data.itraIndex) {
@@ -90,6 +125,13 @@ export default function SettingsPage() {
           if (data.waterTarget != null) setWaterTarget(data.waterTarget);
           if (data.caffeineTarget != null) setCaffeineTarget(data.caffeineTarget);
         }
+
+        setIntervalsAthleteId(foundIntervalsId);
+        setIntervalsApiKey(foundIntervalsKey);
+        if (typeof window !== 'undefined' && foundIntervalsId && foundIntervalsKey) {
+          localStorage.setItem(`mykairn_intervals_id_${uid}`, foundIntervalsId);
+          localStorage.setItem(`mykairn_intervals_key_${uid}`, foundIntervalsKey);
+        }
       } catch (err) {
         console.error("Erreur de chargement profil:", err);
       } finally {
@@ -105,25 +147,66 @@ export default function SettingsPage() {
     }
   }, [currentUser, router]);
 
-  const handleSaveSettings = async (silent = false) => {
+  const handleSaveSettings = async (silent = false, overrideValues = null) => {
     if (!silent) setLoading(true);
     if (!silent) setMessage(null);
     try {
-      await updateDoc(doc(db, "users", currentUser.uid), {
-        itraIndex: parseFloat(itraIndex) || null,
-        weight: parseFloat(weight) || null,
-        fatiguePercent: parseFloat(fatiguePercent) || null,
-        descentThreshold: parseFloat(descentThreshold) || null,
-        walkThreshold: parseFloat(walkThreshold) || null,
-        upCostDivider: parseFloat(upCostDivider) || null,
-        downCostModifier: parseFloat(downCostModifier) || null,
-        pacingStrategy: pacingStrategy || null,
-        paceProfile: paceProfile || null,
+      const uid = currentUser.uid;
+      const rawId = overrideValues?.intervalsAthleteId ?? intervalsAthleteId;
+      const rawKey = overrideValues?.intervalsApiKey ?? intervalsApiKey;
+      const cleanIntervalsId = rawId ? normalizeIntervalsAthleteId(rawId) : "";
+      const cleanIntervalsKey = rawKey ? normalizeIntervalsApiKey(rawKey) : "";
+
+      const effItra = overrideValues?.itraIndex ?? itraIndex;
+      const effWeight = overrideValues?.weight ?? weight;
+      const effFatigue = overrideValues?.fatiguePercent ?? fatiguePercent;
+      const effDescent = overrideValues?.descentThreshold ?? descentThreshold;
+      const effWalk = overrideValues?.walkThreshold ?? walkThreshold;
+      const effUpCost = overrideValues?.upCostDivider ?? upCostDivider;
+      const effDownCost = overrideValues?.downCostModifier ?? downCostModifier;
+      const effPacing = overrideValues?.pacingStrategy ?? pacingStrategy;
+      const effPaceProfile = overrideValues?.paceProfile ?? paceProfile;
+
+      await updateDoc(doc(db, "users", uid), {
+        itraIndex: parseFloat(effItra) || null,
+        weight: parseFloat(effWeight) || null,
+        fatiguePercent: parseFloat(effFatigue) || null,
+        descentThreshold: parseFloat(effDescent) || null,
+        walkThreshold: parseFloat(effWalk) || null,
+        upCostDivider: parseFloat(effUpCost) || null,
+        downCostModifier: parseFloat(effDownCost) || null,
+        pacingStrategy: effPacing || null,
+        paceProfile: effPaceProfile || null,
         carbTarget: parseInt(carbTarget) || null,
         sodiumTarget: parseInt(sodiumTarget) || null,
         waterTarget: parseInt(waterTarget) || null,
         caffeineTarget: parseInt(caffeineTarget) || null,
+        intervalsAthleteId: cleanIntervalsId || null,
+        intervalsApiKey: cleanIntervalsKey || null,
       });
+
+      try {
+        await setDoc(doc(db, "coaches", uid), {
+          intervalsAthleteId: cleanIntervalsId,
+          intervalsApiKey: cleanIntervalsKey,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch {
+        // Ignoré si non-admin
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('intervalsAthleteId');
+        localStorage.removeItem('intervalsApiKey');
+        if (cleanIntervalsKey) {
+          localStorage.setItem(`mykairn_intervals_id_${uid}`, cleanIntervalsId || '0');
+          localStorage.setItem(`mykairn_intervals_key_${uid}`, cleanIntervalsKey);
+        } else {
+          localStorage.removeItem(`mykairn_intervals_id_${uid}`);
+          localStorage.removeItem(`mykairn_intervals_key_${uid}`);
+        }
+      }
+
       if (!silent) {
         setMessage({ type: 'success', text: 'Paramètres mis à jour avec succès !' });
         setTimeout(() => setMessage(null), 3000);
@@ -136,13 +219,92 @@ export default function SettingsPage() {
     }
   };
 
+  const handleTestIntervalsConnection = async () => {
+    setTestingIntervals(true);
+    setIntervalsStatus(null);
+    try {
+      const res = await verifyIntervalsConnection(intervalsAthleteId, intervalsApiKey);
+      setIntervalsAthleteId(res.resolvedAthleteId);
+      setIntervalsApiKey(res.cleanApiKey);
+      const nextWeight = (!weight && res.weight) ? res.weight : weight;
+      if (!weight && res.weight) {
+        setWeight(res.weight);
+      }
+      await handleSaveSettings(true, {
+        intervalsAthleteId: res.resolvedAthleteId,
+        intervalsApiKey: res.cleanApiKey,
+        weight: nextWeight,
+      });
+      setIntervalsStatus({
+        type: 'success',
+        text: `Connexion réussie ! Compte détecté : ${res.name} (ID : ${res.resolvedAthleteId}${res.ctl ? ` • CTL ${res.ctl}` : ''}).`,
+      });
+    } catch (err) {
+      setIntervalsStatus({
+        type: 'error',
+        text: err.message || "Impossible de se connecter à Intervals.icu.",
+      });
+    } finally {
+      setTestingIntervals(false);
+    }
+  };
+
+  const handleProfileFromIntervalsRaces = async () => {
+    setProfilingIntervals(true);
+    setIntervalsStatus(null);
+    try {
+      const prof = await profileAthleteFromIntervalsRaces(intervalsAthleteId, intervalsApiKey);
+      setIntervalsAthleteId(prof.resolvedAthleteId);
+      setIntervalsApiKey(prof.cleanApiKey);
+      setItraIndex(String(prof.calibratedItra));
+      setFatiguePercent(prof.fatiguePercent);
+      setWalkThreshold(prof.walkThreshold);
+      setDescentThreshold(prof.descentThreshold);
+      setUpCostDivider(prof.upCostDivider);
+      setDownCostModifier(prof.downCostModifier);
+      setPacingStrategy(prof.pacingStrategy);
+      const nextWeight = (!weight && prof.weight) ? prof.weight : weight;
+      if (!weight && prof.weight) {
+        setWeight(prof.weight);
+      }
+
+      setCalibProfileResult(prof);
+      await handleSaveSettings(true, {
+        intervalsAthleteId: prof.resolvedAthleteId,
+        intervalsApiKey: prof.cleanApiKey,
+        itraIndex: prof.calibratedItra,
+        weight: nextWeight,
+        fatiguePercent: prof.fatiguePercent,
+        walkThreshold: prof.walkThreshold,
+        descentThreshold: prof.descentThreshold,
+        upCostDivider: prof.upCostDivider,
+        downCostModifier: prof.downCostModifier,
+        pacingStrategy: prof.pacingStrategy,
+      });
+
+      setIntervalsStatus({
+        type: 'success',
+        text: `Profilage terminé sur ${prof.racesCount} sortie(s) (${prof.streamsAnalyzedCount} trace(s) GPS/Pente analysée(s)) ! Vos aptitudes ont été mises à jour.`,
+      });
+      setMessage({ type: 'success', text: `Profil calibré (${prof.runnerArchetype} • ITRA ${prof.calibratedItra}) !` });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err) {
+      setIntervalsStatus({
+        type: 'error',
+        text: err.message || "Erreur lors du profilage depuis Intervals.icu.",
+      });
+    } finally {
+      setProfilingIntervals(false);
+    }
+  };
+
   useEffect(() => {
     if (initialLoading) return;
     const timeoutId = setTimeout(() => {
       handleSaveSettings(true);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [itraIndex, weight, fatiguePercent, descentThreshold, walkThreshold, upCostDivider, downCostModifier, pacingStrategy, paceProfile, carbTarget, sodiumTarget, waterTarget, caffeineTarget, initialLoading]);
+  }, [itraIndex, weight, fatiguePercent, descentThreshold, walkThreshold, upCostDivider, downCostModifier, pacingStrategy, paceProfile, carbTarget, sodiumTarget, waterTarget, caffeineTarget, intervalsAthleteId, intervalsApiKey, initialLoading]);
 
 
   const handleFileChange = async (e) => {
@@ -480,6 +642,214 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Connexion Intervals.icu personnelle */}
+          <div className={styles.profileSection}>
+            <div className={styles.sectionHeader} style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Key size={24} className="text-emerald-500" />
+                <h3>Connexion Intervals.icu & Calibrage Course</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIntervalsHelp(!showIntervalsHelp)}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <HelpCircle size={15} />
+                {showIntervalsHelp ? 'Masquer le guide explicatif' : 'Comment lier Intervals.icu (sans erreur 401) ?'}
+              </button>
+            </div>
+            <p className={styles.sectionDescription}>
+              Vos identifiants API Intervals.icu sont strictement isolés et rattachés à votre compte utilisateur (<strong>{currentUser.email}</strong>). Ils permettent de profiler automatiquement vos aptitudes de coureur (ITRA, seuil de marche, agilité descente, résistance à la fatigue) depuis vos sorties intitulées <strong>« Course »</strong>.
+            </p>
+
+            {showIntervalsHelp && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '16px',
+                borderRadius: '14px',
+                background: 'rgba(16, 185, 129, 0.06)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    📘 Guide rapide : Lier votre compte Intervals.icu en 3 étapes (et éviter l&apos;erreur 401)
+                  </strong>
+                  <a
+                    href="https://intervals.icu/settings"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'underline' }}
+                  >
+                    Ouvrir intervals.icu/settings <ExternalLink size={13} />
+                  </a>
+                </div>
+                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <li>
+                    <strong>1. Récupérez votre Clé API (Developer Key) :</strong> Connectez-vous sur <code>intervals.icu/settings</code>, faites défiler tout en bas jusqu&apos;à la section <strong>« Developer Settings »</strong>, puis cliquez sur <strong>« View »</strong> (ou <em>Generate</em>) à côté de <strong>API Key</strong>. Copiez cette suite de caractères (⚠️ <em>ne mettez jamais votre mot de passe de connexion, sinon vous aurez une erreur 401</em>).
+                  </li>
+                  <li>
+                    <strong>2. Votre ID Athlète (optionnel grâce à l&apos;auto-détection) :</strong> Il commence par la lettre <code>i</code> suivie de chiffres (ex: <code>i467323</code>), visible dans la même section ou dans l&apos;URL de votre profil. <strong>Astuce anti-401 :</strong> vous pouvez laisser <code>0</code> ou cliquer sur <strong>« Tester &amp; Auto-détecter mon ID »</strong> ci-dessous après avoir collé votre Clé API !
+                  </li>
+                  <li>
+                    <strong>3. Nommez vos compétitions « Course » :</strong> Pour que le calibrage donne un poids prioritaire à vos compétitions, intitulez vos courses sur Intervals.icu/Strava avec le mot <strong>« Course »</strong> (ex: <em>Course Trail des Aiguilles</em>) ou cochez la case <em>Race / Compétition</em>.
+                  </li>
+                </ol>
+              </div>
+            )}
+
+            <div className={styles.grid}>
+              <div className={styles.fieldGroup}>
+                <div className={styles.fieldHeader}>
+                  <label className={styles.fieldLabel}><ShieldCheck size={16} /> ID Athlète Intervals.icu</label>
+                  <Tooltip text="Votre identifiant du type i123456. Si vous ne le connaissez pas, laissez vide ou tapez 0 puis cliquez sur 'Tester & Auto-détecter mon ID'." />
+                </div>
+                <div className={styles.fieldDesc}>Format <code>i123456</code> (ou laissez vide pour auto-détection).</div>
+                <div className={styles.inputWrapper}>
+                  <input
+                    type="text"
+                    className={styles.inputField}
+                    placeholder="Ex: i467323 (ou 0 pour auto-détecter)"
+                    value={intervalsAthleteId}
+                    onChange={e => setIntervalsAthleteId(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.fieldGroup}>
+                <div className={styles.fieldHeader}>
+                  <label className={styles.fieldLabel}><Key size={16} /> Clé API (Developer Key)</label>
+                  <Tooltip text="Générez votre clé personnelle dans Intervals.icu > Settings > Developer Settings > API Key." />
+                </div>
+                <div className={styles.fieldDesc}>Clé API Developer (pas votre mot de passe).</div>
+                <div className={styles.inputWrapper}>
+                  <input
+                    type="password"
+                    className={styles.inputField}
+                    placeholder="Collez votre API Key Intervals.icu..."
+                    value={intervalsApiKey}
+                    onChange={e => setIntervalsApiKey(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleTestIntervalsConnection}
+                disabled={testingIntervals || profilingIntervals || !intervalsApiKey.trim()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
+              >
+                {testingIntervals ? <Loader2 size={16} className="lucide-spin" /> : <CheckCircle2 size={16} />}
+                {testingIntervals ? 'Vérification...' : 'Tester la connexion & Auto-détecter mon ID'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleProfileFromIntervalsRaces}
+                disabled={profilingIntervals || testingIntervals || !intervalsApiKey.trim()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
+              >
+                {profilingIntervals ? <Loader2 size={16} className="lucide-spin" /> : <Trophy size={16} />}
+                {profilingIntervals ? 'Analyse des courses & traces GPS...' : 'Profiler & Calibrer mes aptitudes depuis mes Courses'}
+              </button>
+            </div>
+
+            {intervalsStatus && (
+              <div style={{
+                marginTop: '14px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                background: intervalsStatus.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                border: `1px solid ${intervalsStatus.type === 'success' ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+                color: intervalsStatus.type === 'success' ? '#10B981' : '#EF4444',
+              }}>
+                {intervalsStatus.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                <span>{intervalsStatus.text}</span>
+              </div>
+            )}
+
+            {calibProfileResult && (
+              <div style={{
+                marginTop: '16px',
+                padding: '18px',
+                borderRadius: '16px',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-light)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      background: 'var(--color-primary)',
+                      color: '#fff',
+                    }}>
+                      🏆 {calibProfileResult.runnerArchetype}
+                    </span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Basé sur {calibProfileResult.racesCount} course(s) ({calibProfileResult.streamsAnalyzedCount} flux GPS/Pente analysés)
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#10B981' }}>
+                    ✅ Appliqué à votre profil coureur
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+                  <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Cote ITRA Calibrée</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-primary)' }}>
+                      {calibProfileResult.calibratedItra} pts <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>(pic {calibProfileResult.peakItra})</span>
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Score Grimpeur / D+</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {calibProfileResult.uphillEfficiencyScore}/100 <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>(Marche &gt;{calibProfileResult.walkThreshold}%)</span>
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Agilité Descente</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {calibProfileResult.downhillAgilityScore}/100 <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>(Freinage -{calibProfileResult.descentThreshold}%)</span>
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Indice Endurance</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10B981' }}>
+                      {calibProfileResult.enduranceScore}/100 <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>(Fatigue {calibProfileResult.fatiguePercent}%)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {calibProfileResult.referenceRaces?.length > 0 && (
+                  <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                    <strong>Sorties de référence utilisées :</strong>{' '}
+                    {calibProfileResult.referenceRaces.map((r) => `${r.name} (${r.distanceKm}km / +${r.elevationGainM}m • ITRA ~${r.empiricalItra})`).join(' • ')}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className={styles.saveButtonContainer} style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>

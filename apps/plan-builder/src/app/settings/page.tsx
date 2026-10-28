@@ -1,238 +1,263 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { 
-  Key, User, CheckCircle2, AlertCircle, Loader2, Save, 
-  ExternalLink, ShieldCheck, Eye, EyeOff, RefreshCw, Zap
-} from "lucide-react";
-import { fetchAthleteFullProfile } from "@/lib/intervalsApi";
+import React, { useState, useEffect } from "react";
+import { Settings as SettingsIcon, Key, CheckCircle2, ExternalLink, ShieldCheck, Lock, AlertCircle, Loader2, HelpCircle } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { getUserIntervalsCredentials, saveUserIntervalsCredentials } from "@/lib/firebaseUtils";
+import { verifyAndResolveIntervalsConnection, normalizeIntervalsAthleteId, normalizeIntervalsApiKey } from "@/lib/intervalsApi";
 
 export default function SettingsPage() {
-  const [athleteId, setAthleteId] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
-  
+  const { currentUser, isAdmin, loading: authLoading } = useAuth();
+  const [intervalsAthleteId, setIntervalsAthleteId] = useState("");
+  const [intervalsApiKey, setIntervalsApiKey] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; athlete?: any } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [testResult, setTestResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showGuide, setShowGuide] = useState(true);
 
   useEffect(() => {
-    const storedId = localStorage.getItem("intervalsAthleteId") || "";
-    const storedKey = localStorage.getItem("intervalsApiKey") || "";
-    setAthleteId(storedId);
-    setApiKey(storedKey);
-  }, []);
+    if (authLoading) return;
+    setIntervalsAthleteId("");
+    setIntervalsApiKey("");
 
-  const handleTestConnection = async () => {
-    if (!athleteId.trim() || !apiKey.trim()) {
-      setTestResult({
-        success: false,
-        message: "Veuillez renseigner à la fois votre ID Athlète et votre clé API Intervals.icu."
-      });
+    if (!currentUser?.uid || !isAdmin) {
+      setIsLoading(false);
       return;
     }
 
+    let cancelled = false;
+    getUserIntervalsCredentials(currentUser.uid)
+      .then((creds) => {
+        if (cancelled) return;
+        setIntervalsAthleteId(creds.athleteId);
+        setIntervalsApiKey(creds.apiKey);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.uid, isAdmin, authLoading]);
+
+  if (!authLoading && currentUser && !isAdmin) {
+    return null;
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser?.uid) return;
+    setIsSaving(true);
+    setTestResult(null);
+    try {
+      const cleanId = normalizeIntervalsAthleteId(intervalsAthleteId);
+      const cleanKey = normalizeIntervalsApiKey(intervalsApiKey);
+      setIntervalsAthleteId(cleanId);
+      setIntervalsApiKey(cleanKey);
+      await saveUserIntervalsCredentials(currentUser.uid, cleanId, cleanKey);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } catch (err) {
+      alert("Erreur lors de la sauvegarde de vos paramètres Intervals.icu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleTestAndAutoDetect = async () => {
+    if (!currentUser?.uid) return;
     setIsTesting(true);
     setTestResult(null);
-
     try {
-      const profile = await fetchAthleteFullProfile(athleteId.trim(), apiKey.trim());
-      if (profile && !profile.error && profile.name) {
+      const cleanKey = normalizeIntervalsApiKey(intervalsApiKey);
+      const verified = await verifyAndResolveIntervalsConnection(intervalsAthleteId || "0", cleanKey);
+      if (!verified.ok) {
         setTestResult({
-          success: true,
-          message: `Connexion réussie ! Athlète connecté : ${profile.name} (CTL: ${profile.ctl ?? '-'}, ATL: ${profile.atl ?? '-'})`,
-          athlete: profile
+          type: "error",
+          text: verified.error || "Impossible de vérifier vos identifiants Intervals.icu.",
         });
-      } else {
-        setTestResult({
-          success: false,
-          message: profile?.error || "Identifiants invalides ou athlète introuvable. Vérifiez votre ID et votre clé API."
-        });
+        return;
       }
+      setIntervalsAthleteId(verified.resolvedAthleteId);
+      setIntervalsApiKey(cleanKey);
+      await saveUserIntervalsCredentials(currentUser.uid, verified.resolvedAthleteId, cleanKey);
+      setTestResult({
+        type: "success",
+        text: `Connexion validée ! Compte : ${verified.athleteName} (ID résolu : ${verified.resolvedAthleteId}${verified.ctl ? ` • CTL ${verified.ctl}` : ""})`,
+      });
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
     } catch (err: any) {
       setTestResult({
-        success: false,
-        message: `Erreur de connexion : ${err.message || 'Impossible de joindre Intervals.icu'}`
+        type: "error",
+        text: err.message || "Impossible de vérifier vos identifiants Intervals.icu.",
       });
     } finally {
       setIsTesting(false);
     }
   };
 
-  const handleSave = () => {
-    localStorage.setItem("intervalsAthleteId", athleteId.trim());
-    localStorage.setItem("intervalsApiKey", apiKey.trim());
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
-
   return (
-    <div className="flex-1 bg-gradient-to-br from-slate-50 via-white to-orange-50/20 p-4 md:p-8 min-h-screen">
-      <div className="max-w-3xl mx-auto space-y-6">
-        
-        {/* Header */}
-        <header className="bg-white p-6 rounded-2xl shadow-xs border border-gray-100 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              Paramètres
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-7 space-y-6">
+      <header className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl p-5 sm:p-6 shadow-sm flex items-center gap-4">
+        <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 text-[var(--color-primary)] flex items-center justify-center shrink-0">
+          <SettingsIcon size={22} />
+        </div>
+        <div>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-2xl font-extrabold text-[var(--text-primary)] m-0 tracking-tight">
+              Paramètres Coaching & API
             </h1>
-            <p className="text-gray-500 mt-1 text-sm">
-              Configurez vos accès Intervals.icu et vos préférences d'entraînement.
-            </p>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+              ISOLATION PAR COMPTE
+            </span>
           </div>
-          <div className="p-3 bg-orange-100 text-orange-600 rounded-xl">
-            <Key size={24} />
-          </div>
-        </header>
+          <p className="text-sm text-[var(--text-secondary)] mt-0.5 m-0">
+            Identifiants privés associés uniquement au compte <strong>{currentUser?.email || "connecté"}</strong>.
+          </p>
+        </div>
+      </header>
 
-        {/* Intervals.icu Configuration */}
-        <section className="bg-white p-6 md:p-8 rounded-2xl shadow-xs border border-gray-100 space-y-6">
-          <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+      <div className="card p-6 md:p-8">
+        <div className="flex items-start justify-between gap-4 mb-6 pb-5 border-b border-[var(--border-subtle)] flex-wrap">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-orange-50 text-[var(--color-primary)]">
+              <Key size={22} />
+            </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                Connexion Intervals.icu
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Nécessaire pour interroger votre base d'entraînement, vos séances, votre forme (CTL/ATL) et synchroniser avec l'IA.
+              <h2 className="text-lg font-extrabold text-[var(--text-primary)] m-0">Intégration Personnelle Intervals.icu</h2>
+              <p className="text-sm text-[var(--text-secondary)] mt-1 mb-0">
+                Synchronisez votre propre profil d&apos;athlète (ou vos athlètes suivis), votre charge (CTL, ATL, TSB) et vos sorties intitulées « Course » en toute confidentialité.
               </p>
             </div>
-            <a 
-              href="https://intervals.icu/settings" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-xs font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-200 transition"
-            >
-              Obtenir ma clé <ExternalLink size={12} />
-            </a>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowGuide(!showGuide)}
+            className="btn btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
+          >
+            <HelpCircle size={14} />
+            {showGuide ? "Masquer le guide" : "Comment lier Intervals.icu ?"}
+          </button>
+        </div>
 
-          <div className="space-y-4">
-            {/* Athlete ID */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Identifiant Athlète (Athlete ID)
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={athleteId}
-                  onChange={(e) => setAthleteId(e.target.value)}
-                  placeholder="Ex: i12345 ou votre ID Intervals.icu"
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition"
-                />
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                Visible dans l'URL de votre profil sur Intervals.icu (ex: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600">intervals.icu/athlete/i12345</code>).
-              </p>
+        {showGuide && (
+          <div className="mb-6 p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/25 space-y-2.5 text-xs text-[var(--text-secondary)]">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <strong className="text-sm font-extrabold text-[var(--text-primary)]">
+                📘 Comment lier Intervals.icu sans erreur 401 :
+              </strong>
+              <a
+                href="https://intervals.icu/settings"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--color-primary)] font-bold hover:underline inline-flex items-center gap-1"
+              >
+                Ouvrir intervals.icu/settings <ExternalLink size={12} />
+              </a>
+            </div>
+            <ol className="list-decimal pl-5 space-y-1.5 leading-relaxed m-0">
+              <li>
+                <strong>Clé API (Developer Key) :</strong> Sur <code>intervals.icu/settings</code>, descendez jusqu&apos;à la rubrique <strong>Developer Settings</strong> et cliquez sur <strong>View / Generate API Key</strong>. Copiez la clé (⚠️ <em>ne saisissez pas votre mot de passe de connexion</em>).
+              </li>
+              <li>
+                <strong>ID Athlète :</strong> Commence par <code>i</code> suivi de chiffres (ex: <code>i467323</code>). Si vous ne le connaissez pas, laissez <code>0</code> ou cliquez sur <strong>« Tester &amp; Auto-détecter mon ID »</strong>.
+              </li>
+              <li>
+                <strong>Calibrage par les Courses :</strong> Intitulez vos compétitions avec le mot <strong>« Course »</strong> sur Intervals.icu pour profiler automatiquement l&apos;ITRA, le seuil de marche, l&apos;agilité en descente et la fatigue.
+              </li>
+            </ol>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-[var(--text-muted)]">Chargement de votre configuration sécurisée...</div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-6">
+            <div className="input-group">
+              <label className="input-label">Votre ID Athlète / Coach (Athlete ID)</label>
+              <input
+                type="text"
+                value={intervalsAthleteId}
+                onChange={(e) => setIntervalsAthleteId(e.target.value)}
+                placeholder="ex: i467323 (ou 0 pour auto-détecter)"
+              />
+              <span className="text-xs text-[var(--text-muted)] mt-1">
+                Visible dans l&apos;URL de votre profil Intervals.icu ou auto-détecté via le bouton de test ci-dessous.
+              </span>
             </div>
 
-            {/* API Key */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Clé API Intervals.icu
-              </label>
-              <div className="relative">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Collez votre clé API ici..."
-                  className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition font-mono text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 transition"
+            <div className="input-group">
+              <label className="input-label">Votre Clé API Personnelle (API Key)</label>
+              <input
+                type="password"
+                value={intervalsApiKey}
+                onChange={(e) => setIntervalsApiKey(e.target.value)}
+                placeholder="Votre clé API Developer Settings..."
+                required
+              />
+              <span className="text-xs text-[var(--text-muted)] mt-1 flex items-center gap-1">
+                Générez votre clé personnelle sur{" "}
+                <a
+                  href="https://intervals.icu/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--color-primary)] font-semibold hover:underline inline-flex items-center gap-1"
                 >
-                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                Générez votre clé dans <a href="https://intervals.icu/settings" target="_blank" rel="noreferrer" className="text-orange-600 underline">Paramètres Intervals.icu</a> &gt; section <strong>Developer</strong>.
-              </p>
+                  intervals.icu/settings <ExternalLink size={12} />
+                </a>{" "}
+                (section Developer Settings &gt; API Key).
+              </span>
             </div>
-          </div>
 
-          {/* Test connection alert */}
-          {testResult && (
-            <div className={`p-4 rounded-xl border text-sm flex items-start gap-3 ${
-              testResult.success 
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-                : "bg-red-50 border-red-200 text-red-800"
-            }`}>
-              {testResult.success ? (
-                <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={18} />
-              ) : (
-                <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={18} />
-              )}
-              <div className="space-y-1">
-                <p className="font-semibold">{testResult.message}</p>
-                {testResult.athlete && (
-                  <div className="flex gap-4 text-xs mt-2 text-emerald-700">
-                    <span><strong>Poids :</strong> {testResult.athlete.weightKg ? `${testResult.athlete.weightKg} kg` : 'N/C'}</span>
-                    <span><strong>FC Max :</strong> {testResult.athlete.maxHR ? `${testResult.athlete.maxHR} bpm` : 'N/C'}</span>
-                    <span><strong>FTP :</strong> {testResult.athlete.ftp ? `${testResult.athlete.ftp} W` : 'N/C'}</span>
-                  </div>
+            {testResult && (
+              <div
+                className={`p-3.5 rounded-xl border flex items-center gap-2.5 text-xs font-bold ${
+                  testResult.type === "success"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
+                    : "bg-red-500/10 border-red-500/30 text-red-600"
+                }`}
+              >
+                {testResult.type === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                <span>{testResult.text}</span>
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-xl bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] flex items-center gap-3 text-xs text-[var(--text-secondary)]">
+              <Lock size={18} className="text-emerald-500 shrink-0" />
+              <span>
+                <strong>Sécurité & Isolation :</strong> vos identifiants et vos données Intervals.icu sont stockés dans votre espace privé Firestore (<code>users/{currentUser?.uid}</code> et <code>coaches/{currentUser?.uid}</code>) protégé par les règles Firebase.
+              </span>
+            </div>
+
+            <div className="pt-4 border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-3">
+              <div>
+                {isSaved && (
+                  <span className="text-emerald-600 font-bold text-sm flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full">
+                    <CheckCircle2 size={16} /> Paramètres sauvegardés sur votre compte !
+                  </span>
                 )}
               </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleTestAndAutoDetect}
+                  disabled={isTesting || isSaving || !intervalsApiKey.trim()}
+                  className="btn btn-secondary flex items-center gap-1.5"
+                >
+                  {isTesting ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                  <span>{isTesting ? "Test en cours..." : "Tester & Auto-détecter mon ID"}</span>
+                </button>
+                <button type="submit" disabled={isSaving || isTesting} className="btn btn-primary">
+                  {isSaving ? "Enregistrement..." : "Enregistrer sur mon compte"}
+                </button>
+              </div>
             </div>
-          )}
-
-          {/* Action buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-            <button
-              onClick={handleTestConnection}
-              disabled={isTesting || !athleteId || !apiKey}
-              className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition"
-            >
-              {isTesting ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-              Tester la connexion
-            </button>
-
-            <button
-              onClick={handleSave}
-              disabled={!athleteId || !apiKey}
-              className="w-full sm:w-auto px-6 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition shadow-sm"
-            >
-              <Save size={16} />
-              Enregistrer mes identifiants
-            </button>
-
-            {isSaved && (
-              <span className="text-emerald-600 text-xs font-semibold flex items-center gap-1 animate-fade-in">
-                <CheckCircle2 size={16} /> Enregistré dans votre navigateur !
-              </span>
-            )}
-          </div>
-        </section>
-
-        {/* AI & Coach status */}
-        <section className="bg-white p-6 rounded-2xl shadow-xs border border-gray-100 space-y-4">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Zap size={18} className="text-yellow-500" />
-            Statut du Coach IA & Outils d'interrogation
-          </h2>
-          <div className="p-4 bg-slate-50 rounded-xl space-y-2 text-xs text-slate-600">
-            <div className="flex items-center justify-between">
-              <span>Moteur d'Intelligence Artificielle :</span>
-              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                Gemini Pro / Flash
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Interrogation en temps réel Intervals.icu :</span>
-              <span className={`font-semibold px-2 py-0.5 rounded border ${
-                athleteId && apiKey 
-                  ? "text-emerald-700 bg-emerald-50 border-emerald-200" 
-                  : "text-amber-700 bg-amber-50 border-amber-200"
-              }`}>
-                {athleteId && apiKey ? "Activée (Profil, Séances, Wellness, Événements)" : "En attente des clés ci-dessus"}
-              </span>
-            </div>
-          </div>
-        </section>
-
+          </form>
+        )}
       </div>
     </div>
   );

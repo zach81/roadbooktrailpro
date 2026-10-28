@@ -10,6 +10,7 @@ import { Save, ArrowLeft, Loader2, Trash2, Timer, Droplets, Utensils, Activity, 
 import Link from "next/link";
 import styles from "./editor.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, calculateKmEffort, formatDecimalHoursToHHMM, deriveConfigFromITRA } from "@/lib/roadbookCalculator";
+import { profileAthleteFromIntervalsRaces } from "@/lib/intervalsClient";
 
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
@@ -99,6 +100,125 @@ export default function RoadbookEditor() {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [showNutritionModal, setShowNutritionModal] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
+  const [calibratingFromRaces, setCalibratingFromRaces] = useState(false);
+  const [raceCalibSummary, setRaceCalibSummary] = useState(null);
+  const [raceCalibError, setRaceCalibError] = useState(null);
+
+  const handleModulateFromIntervalsRaces = async () => {
+    if (!currentUser?.uid) {
+      alert("Veuillez vous connecter pour accéder à vos données personnelles Intervals.icu.");
+      return;
+    }
+
+    const uid = currentUser.uid;
+    let storedId = typeof window !== "undefined" ? (localStorage.getItem(`mykairn_intervals_id_${uid}`) || "") : "";
+    let storedKey = typeof window !== "undefined" ? (localStorage.getItem(`mykairn_intervals_key_${uid}`) || "") : "";
+
+    try {
+      const userSnap = await getDoc(doc(db, "users", uid));
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        if (uData.intervalsAthleteId) storedId = String(uData.intervalsAthleteId).trim();
+        if (uData.intervalsApiKey) storedKey = String(uData.intervalsApiKey).trim();
+      }
+      if (!storedId || !storedKey) {
+        try {
+          const coachSnap = await getDoc(doc(db, "coaches", uid));
+          if (coachSnap.exists()) {
+            const cData = coachSnap.data();
+            if (!storedId && cData.intervalsAthleteId) storedId = String(cData.intervalsAthleteId).trim();
+            if (!storedKey && cData.intervalsApiKey) storedKey = String(cData.intervalsApiKey).trim();
+          }
+        } catch {
+          // Ignoré si l'utilisateur n'est pas admin
+        }
+      }
+    } catch (e) {
+      console.warn("Lecture identifiants Intervals Firestore:", e);
+    }
+
+    if (!storedKey) {
+      setRaceCalibError("Veuillez renseigner votre Clé API (Developer Key) Intervals.icu dans vos Paramètres (Configuration du coureur).");
+      return;
+    }
+
+    setCalibratingFromRaces(true);
+    setRaceCalibSummary(null);
+    setRaceCalibError(null);
+    try {
+      const rawStats = points.length > 0 ? calculateTraceStats(points, 7, 1) : { distance: 20, elevation: { pos: 1000 } };
+      const rbDist = parseFloat(officialDistance) || rawStats.distance || 20;
+      const rbEle = parseFloat(officialElevation) || rawStats.elevation.pos || 800;
+      const totalPauseMins = waypoints.reduce((acc, w) => acc + (parseFloat(w.pause) || 0), 0);
+
+      const prof = await profileAthleteFromIntervalsRaces(
+        storedId || "0",
+        storedKey,
+        rbDist,
+        rbEle,
+        totalPauseMins
+      );
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(`mykairn_intervals_id_${uid}`, prof.resolvedAthleteId);
+        localStorage.setItem(`mykairn_intervals_key_${uid}`, prof.cleanApiKey);
+      }
+
+      setItraIndex(prof.calibratedItra.toString());
+      setFatiguePercent(prof.fatiguePercent);
+      setDescentThreshold(prof.descentThreshold);
+      setWalkThreshold(prof.walkThreshold);
+      setUpCostDivider(prof.upCostDivider);
+      setDownCostModifier(prof.downCostModifier);
+      setPacingStrategy(prof.pacingStrategy);
+      if (!weight && prof.weight) {
+        setWeight(prof.weight.toString());
+      }
+
+      if (prof.estimatedTargetHours) {
+        setTargetTime(prof.estimatedTargetHours);
+        const h = Math.floor(prof.estimatedTargetHours);
+        const m = Math.round((prof.estimatedTargetHours - h) * 60);
+        setTargetHours(h.toString());
+        setTargetMins(m < 10 ? `0${m}` : m.toString());
+      }
+
+      try {
+        await updateDoc(doc(db, "users", uid), {
+          intervalsAthleteId: prof.resolvedAthleteId,
+          intervalsApiKey: prof.cleanApiKey,
+          itraIndex: prof.calibratedItra,
+          fatiguePercent: prof.fatiguePercent,
+          descentThreshold: prof.descentThreshold,
+          walkThreshold: prof.walkThreshold,
+          upCostDivider: prof.upCostDivider,
+          downCostModifier: prof.downCostModifier,
+          pacingStrategy: prof.pacingStrategy,
+        });
+      } catch {
+        // Ignoré
+      }
+
+      setRaceCalibSummary({
+        count: prof.racesCount,
+        streamsCount: prof.streamsAnalyzedCount,
+        names: prof.referenceRaces.slice(0, 3).map((r) => r.name).join(", "),
+        itra: prof.calibratedItra,
+        archetype: prof.runnerArchetype,
+        walkThreshold: prof.walkThreshold,
+        descentThreshold: prof.descentThreshold,
+        fatiguePercent: prof.fatiguePercent,
+        upScore: prof.uphillEfficiencyScore,
+        downScore: prof.downhillAgilityScore,
+        enduranceScore: prof.enduranceScore,
+        targetFormatted: prof.estimatedTargetFormatted || "--h--",
+      });
+    } catch (err) {
+      setRaceCalibError(err.message || String(err));
+    } finally {
+      setCalibratingFromRaces(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -703,6 +823,59 @@ export default function RoadbookEditor() {
                 style={{ width: '100%' }} 
               />
             </div>
+          </div>
+
+          <div style={{ padding: '12px', borderRadius: 'var(--radius-md)', background: 'rgba(255, 90, 54, 0.06)', border: '1px solid rgba(255, 90, 54, 0.25)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                🏆 Profilage & Calibrage depuis mes Courses Intervals.icu
+              </span>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <Link
+                  href="/settings"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '5px 8px' }}
+                  title="Configurer ou tester ma clé API Intervals.icu"
+                >
+                  ⚙️ Clé API / Guide
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleModulateFromIntervalsRaces}
+                  disabled={calibratingFromRaces}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '5px 10px', borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
+                >
+                  {calibratingFromRaces ? 'Analyse GPS & Courses...' : 'Moduler via mes Courses'}
+                </button>
+              </div>
+            </div>
+            <small style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+              Analyse vos activités Intervals.icu intitulées <strong>« Course »</strong> ainsi que leurs flux GPS/Pente/Vitesse pour calibrer votre profil (ITRA, seuil de marche, agilité descente, résistance fatigue) et l&apos;Objectif Course.
+            </small>
+            {raceCalibError && (
+              <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#EF4444', padding: '8px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                ⚠️ {raceCalibError}{' '}
+                <Link href="/settings" style={{ textDecoration: 'underline', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  Ouvrir le guide de liaison dans Paramètres &rarr;
+                </Link>
+              </div>
+            )}
+            {raceCalibSummary && (
+              <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#10B981', marginTop: '2px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div>
+                  ✅ <strong>{raceCalibSummary.archetype}</strong> — Modulé sur {raceCalibSummary.count} course(s) ({raceCalibSummary.streamsCount} traces GPS analysées) : <strong>ITRA ~{raceCalibSummary.itra}</strong> • Objectif estimé <strong>{raceCalibSummary.targetFormatted}</strong>
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                  Grimpeur {raceCalibSummary.upScore}/100 (Marche &gt;{raceCalibSummary.walkThreshold}%) • Descente {raceCalibSummary.downScore}/100 (Freinage -{raceCalibSummary.descentThreshold}%) • Endurance {raceCalibSummary.enduranceScore}/100 (Fatigue {raceCalibSummary.fatiguePercent}%)
+                </div>
+              </div>
+            )}
+            {roadbook.lastRetroSyncSource && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                🔄 Dernière rétro-synchronisation : <strong>{roadbook.lastRetroSyncSource}</strong>
+              </div>
+            )}
           </div>
 
           <div className={styles.paramGroup}>

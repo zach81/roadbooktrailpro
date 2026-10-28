@@ -4,18 +4,24 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, Activity, Compass, Calendar, Search, Filter, Loader2, 
   AlertCircle, CheckCircle2, Key, RefreshCw, ChevronDown, ChevronUp,
-  Mountain, Heart, Timer, Zap, ExternalLink, ArrowRight, ArrowLeftRight, User
+  Mountain, Heart, Timer, Zap, ExternalLink, ArrowRight, ArrowLeftRight, User, Trophy
 } from 'lucide-react';
 import { 
   fetchIntervalsActivities, 
   fetchActivityStreams, 
   fetchCoachedAthletes, 
   fetchAthleteFullProfile,
-  IntervalsActivity 
+  analyzeRaceActivitiesForCalibration,
+  calibrateAthleteProfileWithStreams,
+  verifyAndResolveIntervalsConnection,
+  normalizeIntervalsAthleteId,
+  normalizeIntervalsApiKey,
+  IntervalsActivity,
+  RaceCalibrationProfile
 } from '@/lib/intervalsApi';
 import { parseIntervalsActivityToCourse, ParsedCourse } from '@/lib/courseParser';
 import { useAuth } from '@/context/AuthContext';
-import { getAthletesFromFirebase } from '@/lib/firebaseUtils';
+import { getAthletesFromFirebase, getUserIntervalsCredentials, saveUserIntervalsCredentials } from '@/lib/firebaseUtils';
 
 export interface CoachedAthleteOption {
   id: string;
@@ -31,6 +37,10 @@ interface IntervalsActivityModalProps {
   initialAthleteId?: string;
   initialAthleteName?: string;
   onAthleteChange?: (athleteId: string, athleteName: string) => void;
+  onCalibrateFromRaces?: (profile: RaceCalibrationProfile) => void;
+  activeRoadbookName?: string;
+  activeRoadbookDistanceKm?: number;
+  activeRoadbookElevationGainM?: number;
 }
 
 function formatPace(metersPerSec: number): string {
@@ -56,7 +66,11 @@ export default function IntervalsActivityModal({
   targetTrace,
   initialAthleteId,
   initialAthleteName,
-  onAthleteChange
+  onAthleteChange,
+  onCalibrateFromRaces,
+  activeRoadbookName,
+  activeRoadbookDistanceKm,
+  activeRoadbookElevationGainM,
 }: IntervalsActivityModalProps) {
   const { currentUser } = useAuth();
 
@@ -73,12 +87,13 @@ export default function IntervalsActivityModal({
   // Data fetching
   const [activities, setActivities] = useState<IntervalsActivity[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isCalibratingStreams, setIsCalibratingStreams] = useState<boolean>(false);
   const [loadingActivityId, setLoadingActivityId] = useState<string | number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Filter state
   const [dateRange, setDateRange] = useState<'30d' | '90d' | '180d' | '365d'>('90d');
-  const [sportFilter, setSportFilter] = useState<'all' | 'run' | 'ride' | 'hike'>('all');
+  const [sportFilter, setSportFilter] = useState<'all' | 'races' | 'run' | 'ride' | 'hike'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [gpsOnly, setGpsOnly] = useState<boolean>(true);
 
@@ -90,32 +105,41 @@ export default function IntervalsActivityModal({
   // Load credentials on mount / open
   useEffect(() => {
     if (!isOpen) return;
+    let cancelled = false;
 
-    const storedId = localStorage.getItem("intervalsAthleteId") || "";
-    const storedKey = localStorage.getItem("intervalsApiKey") || "";
+    const initModal = async () => {
+      const creds = await getUserIntervalsCredentials(currentUser?.uid);
+      if (cancelled) return;
 
-    const effId = initialAthleteId || athleteId || storedId;
-    setAthleteId(effId);
-    setApiKey(storedKey);
+      const storedId = creds.athleteId;
+      const storedKey = creds.apiKey;
+      const effId = initialAthleteId || athleteId || storedId;
+      setAthleteId(effId);
+      setApiKey(storedKey);
 
-    if (initialAthleteName) {
-      setCurrentAthleteName(initialAthleteName);
-    }
+      if (initialAthleteName) {
+        setCurrentAthleteName(initialAthleteName);
+      }
 
-    if (effId && storedKey) {
-      loadActivities(effId, storedKey, dateRange);
-      loadAthleteInfo(effId, storedKey);
-    } else {
-      setShowConfig(true);
-    }
-  }, [isOpen, initialAthleteId, initialAthleteName, dateRange]);
+      if (effId && storedKey) {
+        loadActivities(effId, storedKey, dateRange);
+        loadAthleteInfo(effId, storedKey, storedId);
+      } else {
+        setShowConfig(true);
+      }
+    };
 
-  const loadAthleteInfo = async (activeId: string, key: string) => {
+    initModal();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, initialAthleteId, initialAthleteName, dateRange, currentUser?.uid]);
+
+  const loadAthleteInfo = async (activeId: string, key: string, defaultCoachId?: string) => {
     if (!key || !key.trim()) return;
 
     try {
-      const storedCoachId = localStorage.getItem("intervalsAthleteId")?.trim() || "";
-      const coachIdToQuery = storedCoachId || activeId;
+      const coachIdToQuery = (defaultCoachId || activeId || "").trim();
 
       let coachName = "";
       if (coachIdToQuery) {
@@ -267,16 +291,35 @@ export default function IntervalsActivityModal({
     }
   };
 
-  const handleSaveCredentials = () => {
-    if (!athleteId.trim() || !apiKey.trim()) {
-      setErrorMessage("Veuillez renseigner un ID Athlète et une clé API.");
+  const handleSaveCredentials = async () => {
+    const cleanKey = normalizeIntervalsApiKey(apiKey);
+    if (!cleanKey) {
+      setErrorMessage("Veuillez renseigner votre Clé API (Developer Key) Intervals.icu.");
       return;
     }
-    localStorage.setItem("intervalsAthleteId", athleteId.trim());
-    localStorage.setItem("intervalsApiKey", apiKey.trim());
-    setShowConfig(false);
-    loadActivities(athleteId.trim(), apiKey.trim(), dateRange);
-    loadAthleteInfo(athleteId.trim(), apiKey.trim());
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const verified = await verifyAndResolveIntervalsConnection(athleteId || "0", cleanKey);
+      if (!verified.ok) {
+        setErrorMessage(verified.error || "Erreur lors de la vérification de vos identifiants Intervals.icu.");
+        setIsLoading(false);
+        return;
+      }
+      const resolvedId = verified.resolvedAthleteId;
+      setAthleteId(resolvedId);
+      setApiKey(cleanKey);
+      if (verified.athleteName) setCurrentAthleteName(verified.athleteName);
+      if (currentUser?.uid) {
+        await saveUserIntervalsCredentials(currentUser.uid, resolvedId, cleanKey);
+      }
+      setShowConfig(false);
+      await loadActivities(resolvedId, cleanKey, dateRange);
+      loadAthleteInfo(resolvedId, cleanKey, resolvedId);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Erreur lors de la vérification de vos identifiants Intervals.icu.");
+      setIsLoading(false);
+    }
   };
 
   const handleSwitchAthlete = (newId: string) => {
@@ -310,14 +353,25 @@ export default function IntervalsActivityModal({
     }
   };
 
+  // Profil de calibrage extrait des sorties "Course"
+  const raceCalibrationProfile = useMemo(() => {
+    return analyzeRaceActivitiesForCalibration(
+      activities,
+      activeRoadbookDistanceKm,
+      activeRoadbookElevationGainM
+    );
+  }, [activities, activeRoadbookDistanceKm, activeRoadbookElevationGainM]);
+
   // Filtered activities
   const filteredActivities = useMemo(() => {
     return activities.filter((act) => {
       // GPS filter
       if (gpsOnly && !act.has_gps) return false;
 
-      // Sport filter
-      if (sportFilter === 'run') {
+      // Sport / Race filter
+      if (sportFilter === 'races') {
+        if (!act.isRace) return false;
+      } else if (sportFilter === 'run') {
         const isRun = ['Run', 'TrailRun'].includes(act.type);
         if (!isRun) return false;
       } else if (sportFilter === 'ride') {
@@ -470,6 +524,10 @@ export default function IntervalsActivityModal({
               </a>
             </div>
 
+            <div className="p-2.5 rounded-xl bg-white/80 border border-orange-200/70 text-[11px] text-slate-600 leading-relaxed">
+              💡 <strong>Comment lier sans erreur 401 :</strong> Sur <code>intervals.icu/settings</code>, descendez jusqu&apos;à <strong>Developer Settings &gt; API Key</strong> (ne mettez pas votre mot de passe). Vous pouvez laisser l&apos;ID Athlète vide ou à <code>0</code> : votre vrai identifiant <code>i123456</code> sera auto-détecté !
+            </div>
+
             <div className={`grid grid-cols-1 gap-3 ${coachedAthletes.length > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
               {/* Athlete selector if coach has athletes */}
               {coachedAthletes.length > 0 && (
@@ -547,7 +605,7 @@ export default function IntervalsActivityModal({
             </div>
 
             {/* Sport Filter Buttons */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl flex-wrap">
               <button
                 onClick={() => setSportFilter('all')}
                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
@@ -557,12 +615,24 @@ export default function IntervalsActivityModal({
                 Tous
               </button>
               <button
+                onClick={() => setSportFilter('races')}
+                className={`px-2.5 py-1 text-[11px] font-extrabold rounded-lg transition flex items-center gap-1 ${
+                  sportFilter === 'races'
+                    ? 'bg-orange-600 text-white shadow-xs'
+                    : 'text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200/70'
+                }`}
+                title="Filtrer uniquement les sorties intitulées 'Course' ou marquées comme compétition"
+              >
+                <Trophy size={12} />
+                <span>Courses ({activities.filter((a) => a.isRace).length})</span>
+              </button>
+              <button
                 onClick={() => setSportFilter('run')}
                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
                   sportFilter === 'run' ? 'bg-white text-rose-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                🏃 Trail / Course
+                🏃 Trail / Run
               </button>
               <button
                 onClick={() => setSportFilter('ride')}
@@ -638,6 +708,59 @@ export default function IntervalsActivityModal({
             >
               ✕
             </button>
+          </div>
+        )}
+
+        {/* Race Calibration Banner (Modulation Roadbook depuis les sorties intitulées "Course") */}
+        {raceCalibrationProfile && (
+          <div className="mx-6 mt-3 p-3.5 bg-gradient-to-r from-orange-50 via-amber-50/70 to-emerald-50/50 border border-orange-200/80 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-extrabold uppercase tracking-wider">
+                  <Trophy size={11} /> {raceCalibrationProfile.racesCount} Sortie(s) « Course » détectée(s)
+                </span>
+                <span className="text-xs font-extrabold text-slate-900">
+                  ITRA Empirique Course : <strong className="text-orange-600">{raceCalibrationProfile.avgEmpiricalItra}</strong>
+                </span>
+                <span className="text-xs font-semibold text-slate-600">
+                  • Fatigue observée : <strong>{raceCalibrationProfile.recommendedFatiguePercent}%</strong> ({raceCalibrationProfile.recommendedPacingStrategy})
+                </span>
+                {raceCalibrationProfile.estimatedTargetFormatted && (
+                  <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                    🎯 Estimation modulée {activeRoadbookName ? `(${activeRoadbookName})` : ''} : {raceCalibrationProfile.estimatedTargetFormatted}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-600">
+                Utilisez vos sorties clairement intitulées <strong>« Course »</strong> ({raceCalibrationProfile.referenceRaces.slice(0, 2).map((r) => r.name).join(', ')}) pour calibrer le Roadbook et ses estimations.
+              </p>
+            </div>
+
+            {onCalibrateFromRaces && (
+              <button
+                type="button"
+                disabled={isCalibratingStreams}
+                onClick={async () => {
+                  setIsCalibratingStreams(true);
+                  try {
+                    const highPrecisionProfile = await calibrateAthleteProfileWithStreams(
+                      activities,
+                      apiKey,
+                      activeRoadbookDistanceKm,
+                      activeRoadbookElevationGainM
+                    );
+                    onCalibrateFromRaces(highPrecisionProfile || raceCalibrationProfile);
+                    onClose();
+                  } finally {
+                    setIsCalibratingStreams(false);
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white text-xs font-extrabold shadow-xs transition flex items-center gap-1.5 shrink-0"
+              >
+                {isCalibratingStreams ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                <span>{isCalibratingStreams ? 'Analyse flux GPS & Pente...' : 'Profiler & Moduler le Roadbook'}</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -721,6 +844,19 @@ export default function IntervalsActivityModal({
                         <span className="text-xs text-slate-400 font-medium">
                           {formattedDate}
                         </span>
+
+                        {act.isRace && (
+                          <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Trophy size={10} className="text-amber-600" />
+                            {act.isExplicitCourseTitle ? 'SORTIE COURSE' : 'COMPÉTITION / TRAIL'}
+                          </span>
+                        )}
+
+                        {act.empiricalItra && act.isRace && (
+                          <span className="text-[10px] font-extrabold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+                            ITRA ~{act.empiricalItra}
+                          </span>
+                        )}
 
                         {act.has_gps ? (
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">

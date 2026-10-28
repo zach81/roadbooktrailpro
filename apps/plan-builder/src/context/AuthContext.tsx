@@ -13,6 +13,7 @@ import {
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, setDoc, getDoc } from "firebase/firestore";
+import { purgeLegacyUnscopedStorage } from "@/lib/firebaseUtils";
 
 interface AuthContextType {
   currentUser: User | null;
@@ -43,7 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signup(email: string, password: string) {
     if (!auth) throw new Error("Firebase Auth not initialized");
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    // Créer un document utilisateur dans Firestore
     await setDoc(doc(db, "users", userCredential.user.uid), {
       email: userCredential.user.email,
       createdAt: new Date(),
@@ -66,7 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     const result = await signInWithPopup(auth, provider);
     
-    // Check if user doc exists, if not create it
     const userDocRef = doc(db, "users", result.user.uid);
     const docSnap = await getDoc(userDocRef);
     if (!docSnap.exists()) {
@@ -82,10 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Logout
   function logout() {
     if (!auth) throw new Error("Firebase Auth not initialized");
+    purgeLegacyUnscopedStorage();
     return signOut(auth);
   }
 
   useEffect(() => {
+    purgeLegacyUnscopedStorage();
+
     if (!auth) {
       setLoading(false);
       return;
@@ -102,7 +104,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (userDoc.data().role === 'admin') {
               setIsAdmin(true);
             } else if (isEmailAdmin) {
-              // Synchroniser le statut admin dans Firestore pour les règles de sécurité
               await setDoc(doc(db, "users", user.uid), { role: 'admin' }, { merge: true });
               setIsAdmin(true);
             } else {
