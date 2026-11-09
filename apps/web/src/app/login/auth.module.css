@@ -2,32 +2,131 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: calc(100vh - 200px);
+  min-height: calc(100vh - 120px);
+  padding: 24px 16px;
 }
 
 .authCard {
   width: 100%;
-  max-width: 440px;
+  max-width: 460px;
 }
 
 .title {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 8px;
   color: var(--text-primary);
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
 }
 
 .fullWidthBtn {
   width: 100%;
-  margin-top: 16px;
+  margin-top: 12px;
+}
+
+.stravaBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: var(--radius-md, 12px);
+  background: linear-gradient(135deg, #FC4C02 0%, #E34402 100%);
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(252, 76, 2, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.stravaBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(252, 76, 2, 0.36);
+}
+
+.stravaBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.stravaHelperRow {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+
+.stravaConfigToggle {
+  background: none;
+  border: none;
+  color: #FC4C02;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 6px;
+}
+
+.stravaPanel {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(252, 76, 2, 0.05);
+  border: 1px solid rgba(252, 76, 2, 0.25);
+  font-size: 0.82rem;
+}
+
+.stravaPanelTitle {
+  font-weight: 700;
+  color: #C2410C;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stravaTabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.stravaTabBtn {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(252, 76, 2, 0.25);
+  background: #FFFFFF;
+  color: #64748B;
+}
+
+.stravaTabBtnActive {
+  background: #FC4C02;
+  color: #FFFFFF;
+  border-color: #FC4C02;
 }
 
 .divider {
   display: flex;
   align-items: center;
   text-align: center;
-  margin: 24px 0;
+  margin: 20px 0;
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .divider::before,
@@ -61,8 +160,20 @@
   color: #EF4444;
   padding: 12px 16px;
   border-radius: var(--radius-md);
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   font-size: 0.875rem;
   font-weight: 500;
   border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.infoAlert {
+  background-color: rgba(252, 76, 2, 0.08);
+  color: #C2410C;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid rgba(252, 76, 2, 0.25);
+  text-align: center;
 }

@@ -133,12 +133,12 @@ export default function Navigation() {
 
           {currentUser && (
             <>
-              <div className={styles.userPill} title={`Connecté en tant que ${currentUser.email || ""}`}>
+              <div className={styles.userPill} title={`Connecté en tant que ${currentUser.displayName || currentUser.email || ""}`}>
                 <div className={styles.userAvatar}>
-                  {(currentUser.email?.[0] || "U").toUpperCase()}
+                  {((currentUser.displayName || currentUser.email)?.[0] || "U").toUpperCase()}
                 </div>
                 <span className={styles.userEmail}>
-                  {currentUser.email?.split("@")[0]}
+                  {currentUser.displayName || currentUser.email?.split("@")[0]}
                 </span>
               </div>
               <button

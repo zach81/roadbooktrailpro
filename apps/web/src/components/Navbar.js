@@ -119,11 +119,13 @@ export default function Navbar() {
                   <SettingsIcon size={17} />
                 </Link>
 
-                <div className={styles.userPill} title={currentUser.email}>
+                <div className={styles.userPill} title={currentUser.displayName || currentUser.email}>
                   <div className={styles.userAvatar}>
-                    {(currentUser.email?.[0] || 'U').toUpperCase()}
+                    {((currentUser.displayName || currentUser.email)?.[0] || 'U').toUpperCase()}
                   </div>
-                  <span className={styles.userEmail}>{currentUser.email?.split('@')[0]}</span>
+                  <span className={styles.userEmail}>
+                    {currentUser.displayName || currentUser.email?.split('@')[0]}
+                  </span>
                 </div>
 
                 <button onClick={logout} className={styles.logoutBtn} title="Se déconnecter">

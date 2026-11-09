@@ -11,6 +11,7 @@ import Link from "next/link";
 import styles from "./editor.module.css";
 import { enrichWaypointsWithStartEnd, generateSegments, findPointByDistance, getNightIntensity, calculateTraceStats, findOptimalElevationThreshold, calculateKmEffort, formatDecimalHoursToHHMM, deriveConfigFromITRA, estimateRaceTargetHours } from "@/lib/roadbookCalculator";
 import { profileAthleteFromIntervalsRaces } from "@/lib/intervalsClient";
+import { profileAthleteFromStravaRaces } from "@/lib/stravaClient";
 
 import DisplaySettings, { defaultDisplayConfig } from "@/components/DisplaySettings";
 import { useNavbarActions } from "@/context/NavbarActionsContext";
@@ -103,6 +104,120 @@ export default function RoadbookEditor() {
   const [calibratingFromRaces, setCalibratingFromRaces] = useState(false);
   const [raceCalibSummary, setRaceCalibSummary] = useState(null);
   const [raceCalibError, setRaceCalibError] = useState(null);
+
+  const handleModulateFromStravaRaces = async () => {
+    if (!currentUser?.uid) {
+      alert("Veuillez vous connecter pour accéder à vos données personnelles Strava.");
+      return;
+    }
+
+    const uid = currentUser.uid;
+    let accessToken = typeof window !== "undefined" ? (localStorage.getItem(`mykairn_strava_token_${uid}`) || "") : "";
+    let refreshToken = typeof window !== "undefined" ? (localStorage.getItem(`mykairn_strava_refresh_${uid}`) || "") : "";
+    let clientId = typeof window !== "undefined" ? (localStorage.getItem(`mykairn_strava_client_id_${uid}`) || "") : "";
+    let clientSecret = typeof window !== "undefined" ? (localStorage.getItem(`mykairn_strava_client_secret_${uid}`) || "") : "";
+    let expiresAt = null;
+
+    try {
+      const userSnap = await getDoc(doc(db, "users", uid));
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        if (uData.stravaAccessToken) accessToken = String(uData.stravaAccessToken).trim();
+        if (uData.stravaRefreshToken) refreshToken = String(uData.stravaRefreshToken).trim();
+        if (uData.stravaExpiresAt) expiresAt = Number(uData.stravaExpiresAt);
+        if (uData.stravaClientId) clientId = String(uData.stravaClientId).trim();
+        if (uData.stravaClientSecret) clientSecret = String(uData.stravaClientSecret).trim();
+      }
+    } catch (e) {
+      console.warn("Lecture identifiants Strava Firestore:", e);
+    }
+
+    if (!accessToken && !refreshToken) {
+      setRaceCalibError("Veuillez d'abord connecter votre compte Strava (en 1 clic ou via Access Token) dans vos Paramètres.");
+      return;
+    }
+
+    setCalibratingFromRaces(true);
+    setRaceCalibSummary(null);
+    setRaceCalibError(null);
+    try {
+      const rawStats = points.length > 0 ? calculateTraceStats(points, 7, 1) : { distance: 20, elevation: { pos: 1000 } };
+      const rbDist = parseFloat(officialDistance) || rawStats.distance || 20;
+      const rbEle = parseFloat(officialElevation) || rawStats.elevation.pos || 800;
+      const totalPauseMins = waypoints.reduce((acc, w) => acc + (parseFloat(w.pause) || 0), 0);
+
+      const prof = await profileAthleteFromStravaRaces({
+        accessToken,
+        refreshToken,
+        expiresAt,
+        clientId,
+        clientSecret,
+        targetDistanceKm: rbDist,
+        targetElevationGainM: rbEle,
+        pauseMinutesTotal: totalPauseMins,
+      });
+
+      if (typeof window !== "undefined" && prof.accessToken) {
+        localStorage.setItem(`mykairn_strava_token_${uid}`, prof.accessToken);
+      }
+
+      setItraIndex(prof.calibratedItra.toString());
+      setFatiguePercent(prof.fatiguePercent);
+      setDescentThreshold(prof.descentThreshold);
+      setWalkThreshold(prof.walkThreshold);
+      setUpCostDivider(prof.upCostDivider);
+      setDownCostModifier(prof.downCostModifier);
+      setPacingStrategy(prof.pacingStrategy);
+      if (!weight && prof.weight) {
+        setWeight(prof.weight.toString());
+      }
+
+      if (prof.estimatedTargetHours) {
+        setTargetTime(prof.estimatedTargetHours);
+        const h = Math.floor(prof.estimatedTargetHours);
+        const m = Math.round((prof.estimatedTargetHours - h) * 60);
+        setTargetHours(h.toString());
+        setTargetMins(m < 10 ? `0${m}` : m.toString());
+      }
+
+      try {
+        await updateDoc(doc(db, "users", uid), {
+          stravaAccessToken: prof.accessToken,
+          stravaRefreshToken: prof.refreshToken || refreshToken || null,
+          stravaExpiresAt: prof.expiresAt || expiresAt || null,
+          itraIndex: prof.calibratedItra,
+          fatiguePercent: prof.fatiguePercent,
+          descentThreshold: prof.descentThreshold,
+          walkThreshold: prof.walkThreshold,
+          upCostDivider: prof.upCostDivider,
+          downCostModifier: prof.downCostModifier,
+          pacingStrategy: prof.pacingStrategy,
+        });
+      } catch {
+        // Ignoré
+      }
+
+      setRaceCalibSummary({
+        source: 'Strava',
+        count: prof.racesCount,
+        streamsCount: prof.streamsAnalyzedCount,
+        names: prof.referenceRaces.slice(0, 3).map((r) => r.name).join(", "),
+        itra: prof.calibratedItra,
+        archetype: prof.runnerArchetype,
+        walkThreshold: prof.walkThreshold,
+        descentThreshold: prof.descentThreshold,
+        fatiguePercent: prof.fatiguePercent,
+        upScore: prof.uphillEfficiencyScore,
+        downScore: prof.downhillAgilityScore,
+        enduranceScore: prof.enduranceScore,
+        targetFormatted: prof.estimatedTargetFormatted || "--h--",
+      });
+    } catch (err) {
+      setRaceCalibError(err.message || String(err));
+    } finally {
+      setCalibratingFromRaces(false);
+    }
+  };
 
   const handleModulateFromIntervalsRaces = async () => {
     if (!currentUser?.uid) {
@@ -864,20 +979,37 @@ export default function RoadbookEditor() {
             </div>
           </div>
 
-          <div style={{ padding: '12px', borderRadius: 'var(--radius-md)', background: 'rgba(255, 90, 54, 0.06)', border: '1px solid rgba(255, 90, 54, 0.25)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ padding: '12px', borderRadius: 'var(--radius-md)', background: 'rgba(252, 76, 2, 0.06)', border: '1px solid rgba(252, 76, 2, 0.28)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                🏆 Profilage & Calibrage depuis mes Courses Intervals.icu
+                🏆 Profilage & Calibrage depuis mes Courses (Strava / Intervals.icu)
               </span>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <Link
                   href="/settings"
                   className="btn btn-secondary"
                   style={{ fontSize: '0.72rem', padding: '5px 8px' }}
-                  title="Configurer ou tester ma clé API Intervals.icu"
+                  title="Connecter mon compte Strava ou Intervals.icu"
                 >
-                  ⚙️ Clé API / Guide
+                  ⚙️ Connexions API
                 </Link>
+                <button
+                  type="button"
+                  onClick={handleModulateFromStravaRaces}
+                  disabled={calibratingFromRaces}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '5px 10px',
+                    borderRadius: '8px',
+                    background: '#FC4C02',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {calibratingFromRaces ? 'Analyse GPS...' : '⚡ Moduler via Strava'}
+                </button>
                 <button
                   type="button"
                   onClick={handleModulateFromIntervalsRaces}
@@ -885,12 +1017,12 @@ export default function RoadbookEditor() {
                   className="btn btn-secondary"
                   style={{ fontSize: '0.75rem', padding: '5px 10px', borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
                 >
-                  {calibratingFromRaces ? 'Analyse GPS & Courses...' : 'Moduler via mes Courses'}
+                  {calibratingFromRaces ? 'Analyse...' : 'Intervals.icu'}
                 </button>
               </div>
             </div>
             <small style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-              Analyse vos activités Intervals.icu intitulées <strong>« Course »</strong> ainsi que leurs flux GPS/Pente/Vitesse pour calibrer votre profil (ITRA, seuil de marche, agilité descente, résistance fatigue) et l&apos;Objectif Course.
+              Analyse vos compétitions <strong>Strava</strong> (ou <strong>Intervals.icu</strong>) ainsi que leurs flux GPS/Pente/Vitesse pour calibrer votre profil (ITRA, seuil de marche, agilité descente, fatigue) et l&apos;Objectif Course.
             </small>
             {raceCalibError && (
               <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#EF4444', padding: '8px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>

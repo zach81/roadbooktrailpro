@@ -29,9 +29,13 @@ import {
   calibrateAthleteProfileWithStreams,
   RaceCalibrationProfile 
 } from '@/lib/intervalsApi';
+import {
+  fetchStravaActivitiesList,
+  calibrateAthleteProfileWithStravaStreams,
+} from '@/lib/stravaApi';
 import { useAuth } from '@/context/AuthContext';
 import { getApiUrl } from '@/lib/apiHelper';
-import { getUserIntervalsCredentials } from '@/lib/firebaseUtils';
+import { getUserIntervalsCredentials, getUserStravaCredentials } from '@/lib/firebaseUtils';
 import IntervalsActivityModal from './IntervalsActivityModal';
 import RoadbookSelectModal from './RoadbookSelectModal';
 import ComparatorExplainerModal from './ComparatorExplainerModal';
@@ -84,6 +88,11 @@ interface CourseComparatorProps {
 
 export default function CourseComparator({ initialAthleteName, initialAthleteId }: CourseComparatorProps) {
   const { currentUser } = useAuth();
+  const [mounted, setMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Core comparison state
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
@@ -1047,11 +1056,15 @@ export default function CourseComparator({ initialAthleteName, initialAthleteId 
 
   const handleFetchAndModulateFromRaces = async () => {
     if (!activeRoadbookDoc) return;
-    const creds = await getUserIntervalsCredentials(currentUser?.uid);
-    const storedId = athleteId || creds.athleteId;
-    const storedKey = creds.apiKey;
+    const [intervalsCreds, stravaCreds] = await Promise.all([
+      getUserIntervalsCredentials(currentUser?.uid),
+      getUserStravaCredentials(currentUser?.uid),
+    ]);
+    const storedId = athleteId || intervalsCreds.athleteId;
+    const storedKey = intervalsCreds.apiKey;
+    const hasStrava = Boolean(stravaCreds.accessToken || stravaCreds.refreshToken);
 
-    if (!storedId || !storedKey) {
+    if (!hasStrava && (!storedId || !storedKey)) {
       setIsIntervalsModalOpen(true);
       return;
     }
@@ -1059,23 +1072,51 @@ export default function CourseComparator({ initialAthleteName, initialAthleteId 
     setIsLoadingRacesForCalib(true);
     setErrorMessage(null);
     try {
-      const now = new Date();
-      const oldest = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const newest = now.toISOString().split('T')[0];
-      const acts = await fetchIntervalsActivities(storedId, storedKey, oldest, newest);
-      const profile = await calibrateAthleteProfileWithStreams(
-        acts,
-        storedKey,
-        course1?.totalDistanceKm || Number(activeRoadbookDoc.officialDistance),
-        course1?.elevationGainM || Number(activeRoadbookDoc.officialElevation)
-      );
+      let profile: RaceCalibrationProfile | null = null;
+      const distTarget = course1?.totalDistanceKm || Number(activeRoadbookDoc.officialDistance);
+      const eleTarget = course1?.elevationGainM || Number(activeRoadbookDoc.officialElevation);
+
+      if (hasStrava) {
+        try {
+          const stravaRes = await fetchStravaActivitiesList({
+            accessToken: stravaCreds.accessToken,
+            refreshToken: stravaCreds.refreshToken,
+            expiresAt: stravaCreds.expiresAt,
+            clientId: stravaCreds.clientId,
+            clientSecret: stravaCreds.clientSecret,
+            days: 365,
+          });
+          profile = await calibrateAthleteProfileWithStravaStreams(
+            stravaRes.activities,
+            stravaRes.accessToken,
+            distTarget,
+            eleTarget
+          );
+        } catch {
+          // Fallback Intervals.icu si configuré
+        }
+      }
+
+      if (!profile && storedId && storedKey) {
+        const now = new Date();
+        const oldest = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const newest = now.toISOString().split('T')[0];
+        const acts = await fetchIntervalsActivities(storedId, storedKey, oldest, newest);
+        profile = await calibrateAthleteProfileWithStreams(
+          acts,
+          storedKey,
+          distTarget,
+          eleTarget
+        );
+      }
+
       if (!profile) {
-        setErrorMessage("Aucune sortie intitulée 'Course' ou compétition (> 5 km) trouvée sur les 12 derniers mois dans Intervals.icu.");
+        setErrorMessage("Aucune sortie 'Course' ou compétition (> 5 km) trouvée sur les 12 derniers mois dans votre compte Strava ou Intervals.icu.");
         return;
       }
       handleCalibrateFromRacesProfile(profile);
     } catch (err: any) {
-      setErrorMessage(err.message || "Impossible de récupérer vos sorties 'Course' depuis Intervals.icu.");
+      setErrorMessage(err.message || "Impossible de récupérer vos sorties 'Course' depuis Strava / Intervals.icu.");
     } finally {
       setIsLoadingRacesForCalib(false);
     }
@@ -1254,6 +1295,17 @@ Structure ta réponse en 3 points clairs et actionnables :
   const c2 = comparison?.course2;
   const pa = comparison?.pacingAnalysis;
 
+  if (!mounted) {
+    return (
+      <div className={styles.container}>
+        <div className="flex min-h-[60vh] flex-col items-center justify-center p-12 text-slate-500 font-medium text-sm gap-3">
+          <Loader2 className="animate-spin text-orange-500" size={28} />
+          <span>Chargement du comparateur de courses & virtuel partner...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container}>
       {/* Page Header Card aligned with Plan-Builder & Roadbook Editor */}
@@ -1319,10 +1371,10 @@ Structure ta réponse en 3 points clairs et actionnables :
                 setIsIntervalsModalOpen(true);
               }}
               className={`${styles.headerBtn} ${styles.headerBtnIntervals}`}
-              title="Importer une séance ou course depuis Intervals.icu"
+              title="Importer une séance ou course depuis Strava ou Intervals.icu"
             >
               <Activity size={14} />
-              <span>Intervals.icu</span>
+              <span>Strava / Intervals</span>
             </button>
 
             <button
@@ -1621,7 +1673,7 @@ Structure ta réponse en 3 points clairs et actionnables :
                   className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition flex items-center gap-1.5"
                 >
                   <Activity size={13} />
-                  <span>Depuis Intervals.icu</span>
+                  <span>Depuis Strava / Intervals</span>
                 </button>
               </div>
             </label>
@@ -1674,7 +1726,7 @@ Structure ta réponse en 3 points clairs et actionnables :
                   className="px-3.5 py-1.5 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold border border-sky-200 transition flex items-center gap-1.5"
                 >
                   <Activity size={13} className="text-sky-600" />
-                  <span>Choisir depuis Intervals.icu</span>
+                  <span>Choisir depuis Strava / Intervals</span>
                 </button>
               </div>
             </label>
@@ -1695,7 +1747,7 @@ Structure ta réponse en 3 points clairs et actionnables :
           <div className={styles.singleTraceNoticeText}>
             <Navigation size={18} className="text-emerald-600 shrink-0" />
             <span>
-              <strong>Trace 1 chargée :</strong> {c1.name} ({c1.totalDistanceKm} km • D+ {c1.elevationGainM}m). Ajoutez maintenant une <strong>Trace 2</strong> (.FIT ou séance Intervals.icu) pour lancer le duel Virtual Partner !
+              <strong>Trace 1 chargée :</strong> {c1.name} ({c1.totalDistanceKm} km • D+ {c1.elevationGainM}m). Ajoutez maintenant une <strong>Trace 2</strong> (.FIT, Strava ou Intervals.icu) pour lancer le duel Virtual Partner !
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -1707,7 +1759,7 @@ Structure ta réponse en 3 points clairs et actionnables :
               className="px-3.5 py-1.5 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-full transition flex items-center gap-1.5"
             >
               <Activity size={13} />
-              <span>Trace 2 (Intervals.icu)</span>
+              <span>Trace 2 (Strava / Intervals)</span>
             </button>
             <button
               onClick={() => setShowUploads(true)}

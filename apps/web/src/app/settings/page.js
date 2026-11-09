@@ -12,6 +12,13 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { deriveConfigFromITRA } from '@/lib/roadbookCalculator';
 import { normalizeIntervalsApiKey, normalizeIntervalsAthleteId, verifyIntervalsConnection, profileAthleteFromIntervalsRaces } from '@/lib/intervalsClient';
+import {
+  normalizeStravaToken,
+  buildStravaOAuthUrl,
+  exchangeStravaOAuthCode,
+  verifyStravaConnection,
+  profileAthleteFromStravaRaces,
+} from '@/lib/stravaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Tooltip = ({ text }) => {
@@ -60,6 +67,20 @@ export default function SettingsPage() {
   const [waterTarget, setWaterTarget] = useState("");
   const [caffeineTarget, setCaffeineTarget] = useState("");
 
+  // Connexion Strava Grand Public (propre à ce compte)
+  const [stravaAthleteId, setStravaAthleteId] = useState("");
+  const [stravaAthleteName, setStravaAthleteName] = useState("");
+  const [stravaAvatarUrl, setStravaAvatarUrl] = useState("");
+  const [stravaAccessToken, setStravaAccessToken] = useState("");
+  const [stravaRefreshToken, setStravaRefreshToken] = useState("");
+  const [stravaExpiresAt, setStravaExpiresAt] = useState(null);
+  const [stravaClientId, setStravaClientId] = useState("");
+  const [stravaClientSecret, setStravaClientSecret] = useState("");
+  const [testingStrava, setTestingStrava] = useState(false);
+  const [profilingStrava, setProfilingStrava] = useState(false);
+  const [stravaStatus, setStravaStatus] = useState(null);
+  const [showStravaAdvanced, setShowStravaAdvanced] = useState(false);
+
   // Connexion Intervals.icu personnelle (propre à ce compte)
   const [intervalsAthleteId, setIntervalsAthleteId] = useState("");
   const [intervalsApiKey, setIntervalsApiKey] = useState("");
@@ -67,7 +88,7 @@ export default function SettingsPage() {
   const [profilingIntervals, setProfilingIntervals] = useState(false);
   const [intervalsStatus, setIntervalsStatus] = useState(null);
   const [calibProfileResult, setCalibProfileResult] = useState(null);
-  const [showIntervalsHelp, setShowIntervalsHelp] = useState(true);
+  const [showIntervalsHelp, setShowIntervalsHelp] = useState(false);
 
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -91,6 +112,14 @@ export default function SettingsPage() {
 
         let foundIntervalsId = "";
         let foundIntervalsKey = "";
+        let foundStravaAccess = "";
+        let foundStravaRefresh = "";
+        let foundStravaExpires = null;
+        let foundStravaId = "";
+        let foundStravaName = "";
+        let foundStravaAvatar = "";
+        let foundStravaClientId = "";
+        let foundStravaClientSecret = "";
 
         if (coachDoc && coachDoc.exists()) {
           const cData = coachDoc.data();
@@ -103,6 +132,15 @@ export default function SettingsPage() {
 
           if (!foundIntervalsId && data.intervalsAthleteId) foundIntervalsId = String(data.intervalsAthleteId).trim();
           if (!foundIntervalsKey && data.intervalsApiKey) foundIntervalsKey = String(data.intervalsApiKey).trim();
+
+          if (data.stravaAccessToken) foundStravaAccess = String(data.stravaAccessToken).trim();
+          if (data.stravaRefreshToken) foundStravaRefresh = String(data.stravaRefreshToken).trim();
+          if (data.stravaExpiresAt) foundStravaExpires = Number(data.stravaExpiresAt);
+          if (data.stravaAthleteId) foundStravaId = String(data.stravaAthleteId).trim();
+          if (data.stravaAthleteName) foundStravaName = String(data.stravaAthleteName).trim();
+          if (data.stravaAvatarUrl) foundStravaAvatar = String(data.stravaAvatarUrl).trim();
+          if (data.stravaClientId) foundStravaClientId = String(data.stravaClientId).trim();
+          if (data.stravaClientSecret) foundStravaClientSecret = String(data.stravaClientSecret).trim();
 
           let defaultConfig = null;
           if (data.itraIndex) {
@@ -128,9 +166,110 @@ export default function SettingsPage() {
 
         setIntervalsAthleteId(foundIntervalsId);
         setIntervalsApiKey(foundIntervalsKey);
-        if (typeof window !== 'undefined' && foundIntervalsId && foundIntervalsKey) {
-          localStorage.setItem(`mykairn_intervals_id_${uid}`, foundIntervalsId);
-          localStorage.setItem(`mykairn_intervals_key_${uid}`, foundIntervalsKey);
+        setStravaAccessToken(foundStravaAccess);
+        setStravaRefreshToken(foundStravaRefresh);
+        setStravaExpiresAt(foundStravaExpires);
+        setStravaAthleteId(foundStravaId);
+        setStravaAthleteName(foundStravaName);
+        setStravaAvatarUrl(foundStravaAvatar);
+        setStravaClientId(foundStravaClientId);
+        setStravaClientSecret(foundStravaClientSecret);
+
+        if (typeof window !== 'undefined') {
+          if (foundIntervalsId && foundIntervalsKey) {
+            localStorage.setItem(`mykairn_intervals_id_${uid}`, foundIntervalsId);
+            localStorage.setItem(`mykairn_intervals_key_${uid}`, foundIntervalsKey);
+          }
+          if (foundStravaAccess) {
+            localStorage.setItem(`mykairn_strava_token_${uid}`, foundStravaAccess);
+          }
+          if (foundStravaRefresh) {
+            localStorage.setItem(`mykairn_strava_refresh_${uid}`, foundStravaRefresh);
+          }
+
+          // Gestion automatique du retour OAuth2 Strava (?code=...&scope=...)
+          const urlParams = new URLSearchParams(window.location.search);
+          const oauthCode = urlParams.get('code');
+          const oauthScope = urlParams.get('scope') || '';
+          const oauthError = urlParams.get('error');
+
+          if (oauthError) {
+            setStravaStatus({
+              type: 'error',
+              text: "Autorisation Strava annulée ou refusée.",
+            });
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else if (oauthCode && (oauthScope.includes('activity') || urlParams.get('strava_oauth') === '1')) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setTestingStrava(true);
+            try {
+              const savedClientId =
+                foundStravaClientId ||
+                localStorage.getItem(`mykairn_strava_client_id_${uid}`) ||
+                '';
+              const savedClientSecret =
+                foundStravaClientSecret ||
+                localStorage.getItem(`mykairn_strava_client_secret_${uid}`) ||
+                '';
+
+              const tokenData = await exchangeStravaOAuthCode({
+                code: oauthCode,
+                clientId: savedClientId,
+                clientSecret: savedClientSecret,
+              });
+
+              const ath = tokenData.athlete || {};
+              const athName =
+                `${ath.firstname || ''} ${ath.lastname || ''}`.trim() ||
+                ath.username ||
+                `Athlète #${ath.id || ''}`;
+              const athAvatar = ath.profile || ath.profile_medium || '';
+              const athWeight =
+                typeof ath.weight === 'number' && ath.weight > 30
+                  ? Math.round(ath.weight * 10) / 10
+                  : null;
+
+              setStravaAccessToken(tokenData.accessToken);
+              setStravaRefreshToken(tokenData.refreshToken || '');
+              setStravaExpiresAt(tokenData.expiresAt || null);
+              setStravaAthleteId(ath.id ? String(ath.id) : '');
+              setStravaAthleteName(athName);
+              setStravaAvatarUrl(athAvatar);
+              if (athWeight) setWeight(athWeight);
+
+              localStorage.setItem(`mykairn_strava_token_${uid}`, tokenData.accessToken);
+              if (tokenData.refreshToken) {
+                localStorage.setItem(`mykairn_strava_refresh_${uid}`, tokenData.refreshToken);
+              }
+
+              await setDoc(
+                doc(db, 'users', uid),
+                {
+                  stravaAccessToken: tokenData.accessToken,
+                  stravaRefreshToken: tokenData.refreshToken || null,
+                  stravaExpiresAt: tokenData.expiresAt || null,
+                  stravaAthleteId: ath.id ? String(ath.id) : null,
+                  stravaAthleteName: athName,
+                  stravaAvatarUrl: athAvatar || null,
+                  ...(athWeight ? { weight: athWeight } : {}),
+                },
+                { merge: true }
+              );
+
+              setStravaStatus({
+                type: 'success',
+                text: `Compte Strava connecté avec succès : ${athName} ! Vous pouvez maintenant calibrer votre profil ou importer vos sorties Strava en Roadbooks.`,
+              });
+            } catch (oauthErr) {
+              setStravaStatus({
+                type: 'error',
+                text: oauthErr.message || "Erreur lors de la validation OAuth Strava.",
+              });
+              setShowStravaAdvanced(true);
+            } finally {
+              setTestingStrava(false);
+            }
+          }
         }
       } catch (err) {
         console.error("Erreur de chargement profil:", err);
@@ -156,6 +295,15 @@ export default function SettingsPage() {
       const rawKey = overrideValues?.intervalsApiKey ?? intervalsApiKey;
       const cleanIntervalsId = rawId ? normalizeIntervalsAthleteId(rawId) : "";
       const cleanIntervalsKey = rawKey ? normalizeIntervalsApiKey(rawKey) : "";
+
+      const cleanStravaAccess = normalizeStravaToken(overrideValues?.stravaAccessToken ?? stravaAccessToken);
+      const cleanStravaRefresh = normalizeStravaToken(overrideValues?.stravaRefreshToken ?? stravaRefreshToken);
+      const effStravaExpires = overrideValues?.stravaExpiresAt ?? stravaExpiresAt;
+      const effStravaId = overrideValues?.stravaAthleteId ?? stravaAthleteId;
+      const effStravaName = overrideValues?.stravaAthleteName ?? stravaAthleteName;
+      const effStravaAvatar = overrideValues?.stravaAvatarUrl ?? stravaAvatarUrl;
+      const cleanStravaClientId = String(overrideValues?.stravaClientId ?? stravaClientId ?? '').trim();
+      const cleanStravaClientSecret = String(overrideValues?.stravaClientSecret ?? stravaClientSecret ?? '').trim();
 
       const effItra = overrideValues?.itraIndex ?? itraIndex;
       const effWeight = overrideValues?.weight ?? weight;
@@ -183,6 +331,14 @@ export default function SettingsPage() {
         caffeineTarget: parseInt(caffeineTarget) || null,
         intervalsAthleteId: cleanIntervalsId || null,
         intervalsApiKey: cleanIntervalsKey || null,
+        stravaAccessToken: cleanStravaAccess || null,
+        stravaRefreshToken: cleanStravaRefresh || null,
+        stravaExpiresAt: effStravaExpires || null,
+        stravaAthleteId: effStravaId || null,
+        stravaAthleteName: effStravaName || null,
+        stravaAvatarUrl: effStravaAvatar || null,
+        stravaClientId: cleanStravaClientId || null,
+        stravaClientSecret: cleanStravaClientSecret || null,
       });
 
       try {
@@ -204,6 +360,22 @@ export default function SettingsPage() {
         } else {
           localStorage.removeItem(`mykairn_intervals_id_${uid}`);
           localStorage.removeItem(`mykairn_intervals_key_${uid}`);
+        }
+        if (cleanStravaAccess) {
+          localStorage.setItem(`mykairn_strava_token_${uid}`, cleanStravaAccess);
+        } else {
+          localStorage.removeItem(`mykairn_strava_token_${uid}`);
+        }
+        if (cleanStravaRefresh) {
+          localStorage.setItem(`mykairn_strava_refresh_${uid}`, cleanStravaRefresh);
+        } else {
+          localStorage.removeItem(`mykairn_strava_refresh_${uid}`);
+        }
+        if (cleanStravaClientId) {
+          localStorage.setItem(`mykairn_strava_client_id_${uid}`, cleanStravaClientId);
+        }
+        if (cleanStravaClientSecret) {
+          localStorage.setItem(`mykairn_strava_client_secret_${uid}`, cleanStravaClientSecret);
         }
       }
 
@@ -298,13 +470,173 @@ export default function SettingsPage() {
     }
   };
 
+  const handleStartStravaOAuth = () => {
+    setStravaStatus(null);
+    try {
+      const uid = currentUser?.uid;
+      if (typeof window !== 'undefined' && uid) {
+        if (stravaClientId.trim()) {
+          localStorage.setItem(`mykairn_strava_client_id_${uid}`, stravaClientId.trim());
+        }
+        if (stravaClientSecret.trim()) {
+          localStorage.setItem(`mykairn_strava_client_secret_${uid}`, stravaClientSecret.trim());
+        }
+      }
+      const redirectUri = `${window.location.origin}/settings?strava_oauth=1`;
+      const authUrl = buildStravaOAuthUrl({
+        clientId: stravaClientId,
+        redirectUri,
+      });
+      window.location.href = authUrl;
+    } catch (err) {
+      setShowStravaAdvanced(true);
+      setStravaStatus({
+        type: 'error',
+        text: err.message || "Veuillez renseigner votre Client ID Strava ou votre Access Token ci-dessous.",
+      });
+    }
+  };
+
+  const handleTestStravaConnection = async () => {
+    setTestingStrava(true);
+    setStravaStatus(null);
+    try {
+      const verified = await verifyStravaConnection({
+        accessToken: stravaAccessToken,
+        refreshToken: stravaRefreshToken,
+        expiresAt: stravaExpiresAt,
+        clientId: stravaClientId,
+        clientSecret: stravaClientSecret,
+      });
+      setStravaAthleteId(verified.athleteId);
+      setStravaAthleteName(verified.athleteName);
+      setStravaAvatarUrl(verified.avatarUrl || "");
+      setStravaAccessToken(verified.accessToken);
+      if (verified.refreshToken) setStravaRefreshToken(verified.refreshToken);
+      if (verified.expiresAt) setStravaExpiresAt(verified.expiresAt);
+
+      const nextWeight = (!weight && verified.weight) ? verified.weight : weight;
+      if (!weight && verified.weight) {
+        setWeight(verified.weight);
+      }
+
+      await handleSaveSettings(true, {
+        stravaAthleteId: verified.athleteId,
+        stravaAthleteName: verified.athleteName,
+        stravaAvatarUrl: verified.avatarUrl || "",
+        stravaAccessToken: verified.accessToken,
+        stravaRefreshToken: verified.refreshToken || stravaRefreshToken,
+        stravaExpiresAt: verified.expiresAt || stravaExpiresAt,
+        weight: nextWeight,
+      });
+
+      setStravaStatus({
+        type: 'success',
+        text: `Connexion Strava active ! Athlète : ${verified.athleteName} (ID #${verified.athleteId}${verified.city ? ` • ${verified.city}` : ''}).`,
+      });
+    } catch (err) {
+      setStravaStatus({
+        type: 'error',
+        text: err.message || "Impossible de se connecter à Strava.",
+      });
+    } finally {
+      setTestingStrava(false);
+    }
+  };
+
+  const handleProfileFromStravaRaces = async () => {
+    setProfilingStrava(true);
+    setStravaStatus(null);
+    try {
+      const prof = await profileAthleteFromStravaRaces({
+        accessToken: stravaAccessToken,
+        refreshToken: stravaRefreshToken,
+        expiresAt: stravaExpiresAt,
+        clientId: stravaClientId,
+        clientSecret: stravaClientSecret,
+      });
+
+      setStravaAthleteId(prof.stravaAthleteId);
+      setStravaAthleteName(prof.athleteName);
+      setStravaAvatarUrl(prof.avatarUrl || "");
+      setStravaAccessToken(prof.accessToken);
+      if (prof.refreshToken) setStravaRefreshToken(prof.refreshToken);
+      if (prof.expiresAt) setStravaExpiresAt(prof.expiresAt);
+
+      setItraIndex(String(prof.calibratedItra));
+      setFatiguePercent(prof.fatiguePercent);
+      setWalkThreshold(prof.walkThreshold);
+      setDescentThreshold(prof.descentThreshold);
+      setUpCostDivider(prof.upCostDivider);
+      setDownCostModifier(prof.downCostModifier);
+      setPacingStrategy(prof.pacingStrategy);
+      const nextWeight = (!weight && prof.weight) ? prof.weight : weight;
+      if (!weight && prof.weight) {
+        setWeight(prof.weight);
+      }
+
+      setCalibProfileResult(prof);
+      await handleSaveSettings(true, {
+        stravaAthleteId: prof.stravaAthleteId,
+        stravaAthleteName: prof.athleteName,
+        stravaAvatarUrl: prof.avatarUrl || "",
+        stravaAccessToken: prof.accessToken,
+        stravaRefreshToken: prof.refreshToken || stravaRefreshToken,
+        stravaExpiresAt: prof.expiresAt || stravaExpiresAt,
+        itraIndex: prof.calibratedItra,
+        weight: nextWeight,
+        fatiguePercent: prof.fatiguePercent,
+        walkThreshold: prof.walkThreshold,
+        descentThreshold: prof.descentThreshold,
+        upCostDivider: prof.upCostDivider,
+        downCostModifier: prof.downCostModifier,
+        pacingStrategy: prof.pacingStrategy,
+      });
+
+      setStravaStatus({
+        type: 'success',
+        text: `Profilage Strava réussi sur ${prof.racesCount} course(s) (${prof.streamsAnalyzedCount} trace(s) GPS/Pente analysée(s)) ! Vos aptitudes ont été mises à jour.`,
+      });
+      setMessage({ type: 'success', text: `Profil Strava calibré (${prof.runnerArchetype} • ITRA ${prof.calibratedItra}) !` });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err) {
+      setStravaStatus({
+        type: 'error',
+        text: err.message || "Erreur lors du profilage depuis vos courses Strava.",
+      });
+    } finally {
+      setProfilingStrava(false);
+    }
+  };
+
+  const handleDisconnectStrava = async () => {
+    setStravaAccessToken("");
+    setStravaRefreshToken("");
+    setStravaExpiresAt(null);
+    setStravaAthleteId("");
+    setStravaAthleteName("");
+    setStravaAvatarUrl("");
+    await handleSaveSettings(true, {
+      stravaAccessToken: "",
+      stravaRefreshToken: "",
+      stravaExpiresAt: null,
+      stravaAthleteId: "",
+      stravaAthleteName: "",
+      stravaAvatarUrl: "",
+    });
+    setStravaStatus({
+      type: 'success',
+      text: "Compte Strava dissocié de votre profil.",
+    });
+  };
+
   useEffect(() => {
     if (initialLoading) return;
     const timeoutId = setTimeout(() => {
       handleSaveSettings(true);
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [itraIndex, weight, fatiguePercent, descentThreshold, walkThreshold, upCostDivider, downCostModifier, pacingStrategy, paceProfile, carbTarget, sodiumTarget, waterTarget, caffeineTarget, intervalsAthleteId, intervalsApiKey, initialLoading]);
+  }, [itraIndex, weight, fatiguePercent, descentThreshold, walkThreshold, upCostDivider, downCostModifier, pacingStrategy, paceProfile, carbTarget, sodiumTarget, waterTarget, caffeineTarget, intervalsAthleteId, intervalsApiKey, stravaAccessToken, stravaRefreshToken, stravaClientId, stravaClientSecret, initialLoading]);
 
 
   const handleFileChange = async (e) => {
@@ -642,6 +974,275 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Connexion Strava Grand Public (Recommandé) */}
+          <div className={styles.profileSection} style={{ border: '1px solid rgba(252, 76, 2, 0.35)' }}>
+            <div className={styles.sectionHeader} style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '10px',
+                  background: '#FC4C02',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 900,
+                  fontSize: '0.95rem',
+                }}>
+                  S
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    Connexion Strava & Calibrage Automatique
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      padding: '3px 8px',
+                      borderRadius: '999px',
+                      background: 'rgba(252, 76, 2, 0.14)',
+                      color: '#FC4C02',
+                      border: '1px solid rgba(252, 76, 2, 0.3)',
+                    }}>
+                      Recommandé • Grand Public
+                    </span>
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowStravaAdvanced(!showStravaAdvanced)}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Key size={15} />
+                {showStravaAdvanced ? 'Masquer la clé API Strava' : 'Jeton / Clé API Strava manuelle'}
+              </button>
+            </div>
+
+            <p className={styles.sectionDescription}>
+              Connectez votre compte <strong>Strava</strong> pour calibrer automatiquement votre cote ITRA, votre seuil de marche, votre agilité en descente et votre résistance à la fatigue à partir de vos courses et sorties trail, et pour <strong>importer n&apos;importe quelle sortie Strava en Roadbook en 1 clic</strong> depuis votre Tableau de bord.
+            </p>
+
+            {stravaAthleteName && stravaAccessToken && (
+              <div style={{
+                marginBottom: '16px',
+                padding: '12px 16px',
+                borderRadius: '14px',
+                background: 'rgba(252, 76, 2, 0.08)',
+                border: '1px solid rgba(252, 76, 2, 0.28)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {stravaAvatarUrl ? (
+                    <img
+                      src={stravaAvatarUrl}
+                      alt={stravaAthleteName}
+                      style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #FC4C02' }}
+                    />
+                  ) : (
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#FC4C02', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+                      S
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {stravaAthleteName}
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10B981', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 8px', borderRadius: '999px' }}>
+                        ✓ Connecté à Strava
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                      ID Athlète Strava : <code>#{stravaAthleteId || 'auto'}</code> • Synchronisation des courses & traces GPS activée
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDisconnectStrava}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '5px 10px' }}
+                >
+                  Déconnecter
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleStartStravaOAuth}
+                disabled={testingStrava || profilingStrava}
+                style={{
+                  background: '#FC4C02',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '0.86rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(252, 76, 2, 0.28)',
+                }}
+              >
+                <Zap size={16} />
+                {stravaAccessToken ? 'Reconnecter avec Strava (OAuth 1-clic)' : 'Se connecter avec Strava (OAuth 1-clic)'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleTestStravaConnection}
+                disabled={testingStrava || profilingStrava || (!stravaAccessToken.trim() && !stravaRefreshToken.trim())}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
+              >
+                {testingStrava ? <Loader2 size={16} className="lucide-spin" /> : <CheckCircle2 size={16} />}
+                {testingStrava ? 'Vérification Strava...' : 'Tester ma connexion Strava'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleProfileFromStravaRaces}
+                disabled={profilingStrava || testingStrava || (!stravaAccessToken.trim() && !stravaRefreshToken.trim())}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
+              >
+                {profilingStrava ? <Loader2 size={16} className="lucide-spin" /> : <Trophy size={16} />}
+                {profilingStrava ? 'Analyse de vos courses Strava...' : 'Profiler & Calibrer mes aptitudes depuis Strava'}
+              </button>
+            </div>
+
+            {showStravaAdvanced && (
+              <div style={{
+                marginTop: '18px',
+                padding: '16px',
+                borderRadius: '14px',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-light)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                    🔑 Connexion rapide par Jeton / Application API Strava personnelle
+                  </strong>
+                  <a
+                    href="https://www.strava.com/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '0.8rem', fontWeight: 700, color: '#FC4C02', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'underline' }}
+                  >
+                    Ouvrir strava.com/settings/api <ExternalLink size={13} />
+                  </a>
+                </div>
+                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.55, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <li>
+                    <strong>Mode instantané (Access Token) :</strong> Sur <code>strava.com/settings/api</code>, copiez votre <strong>Your Access Token</strong> et collez-le ci-dessous, puis cliquez sur <em>« Tester ma connexion Strava »</em>.
+                  </li>
+                  <li>
+                    <strong>Mode OAuth 1-clic & renouvellement automatique :</strong> Renseignez également votre <strong>Client ID</strong>, <strong>Client Secret</strong> et <strong>Refresh Token</strong> (Domaine d&apos;autorisation : <code>localhost</code> en local ou votre nom de domaine) pour que le bouton orange <em>« Se connecter avec Strava »</em> accorde automatiquement les droits <code>activity:read_all</code> et renouvelle votre session en continu.
+                  </li>
+                </ol>
+
+                <div className={styles.grid}>
+                  <div className={styles.fieldGroup}>
+                    <div className={styles.fieldHeader}>
+                      <label className={styles.fieldLabel}><Key size={15} /> Access Token Strava</label>
+                    </div>
+                    <div className={styles.fieldDesc}>Jeton d&apos;accès direct (Your Access Token).</div>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        type="password"
+                        className={styles.inputField}
+                        placeholder="Collez votre Access Token Strava..."
+                        value={stravaAccessToken}
+                        onChange={e => setStravaAccessToken(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <div className={styles.fieldHeader}>
+                      <label className={styles.fieldLabel}><ShieldCheck size={15} /> Refresh Token (Optionnel)</label>
+                    </div>
+                    <div className={styles.fieldDesc}>Permet le renouvellement automatique du jeton.</div>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        type="password"
+                        className={styles.inputField}
+                        placeholder="Collez votre Refresh Token..."
+                        value={stravaRefreshToken}
+                        onChange={e => setStravaRefreshToken(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <div className={styles.fieldHeader}>
+                      <label className={styles.fieldLabel}>Client ID Strava (Optionnel)</label>
+                    </div>
+                    <div className={styles.fieldDesc}>Ex: 123456 (pour le bouton OAuth 1-clic).</div>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        type="text"
+                        className={styles.inputField}
+                        placeholder="Ex: 124578"
+                        value={stravaClientId}
+                        onChange={e => setStravaClientId(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <div className={styles.fieldHeader}>
+                      <label className={styles.fieldLabel}>Client Secret Strava (Optionnel)</label>
+                    </div>
+                    <div className={styles.fieldDesc}>Clé secrète OAuth pour rafraîchir le jeton.</div>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        type="password"
+                        className={styles.inputField}
+                        placeholder="Votre Client Secret Strava..."
+                        value={stravaClientSecret}
+                        onChange={e => setStravaClientSecret(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {stravaStatus && (
+              <div style={{
+                marginTop: '14px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                background: stravaStatus.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                border: `1px solid ${stravaStatus.type === 'success' ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+                color: stravaStatus.type === 'success' ? '#10B981' : '#EF4444',
+              }}>
+                {stravaStatus.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                <span>{stravaStatus.text}</span>
+              </div>
+            )}
           </div>
 
           {/* Connexion Intervals.icu personnelle */}

@@ -19,9 +19,21 @@ import {
   IntervalsActivity,
   RaceCalibrationProfile
 } from '@/lib/intervalsApi';
-import { parseIntervalsActivityToCourse, ParsedCourse } from '@/lib/courseParser';
+import { parseIntervalsActivityToCourse, parseStravaActivityToCourse, ParsedCourse } from '@/lib/courseParser';
+import {
+  fetchStravaActivitiesList,
+  fetchStravaStreams,
+  calibrateAthleteProfileWithStravaStreams,
+  normalizeStravaToken,
+} from '@/lib/stravaApi';
 import { useAuth } from '@/context/AuthContext';
-import { getAthletesFromFirebase, getUserIntervalsCredentials, saveUserIntervalsCredentials } from '@/lib/firebaseUtils';
+import {
+  getAthletesFromFirebase,
+  getUserIntervalsCredentials,
+  saveUserIntervalsCredentials,
+  getUserStravaCredentials,
+  saveUserStravaCredentials,
+} from '@/lib/firebaseUtils';
 
 export interface CoachedAthleteOption {
   id: string;
@@ -74,9 +86,21 @@ export default function IntervalsActivityModal({
 }: IntervalsActivityModalProps) {
   const { currentUser } = useAuth();
 
-  // Credentials
+  // Provider source ('strava' grand public ou 'intervals')
+  const [provider, setProvider] = useState<'strava' | 'intervals'>('strava');
+
+  // Credentials Intervals.icu
   const [athleteId, setAthleteId] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
+
+  // Credentials Strava
+  const [stravaAccessToken, setStravaAccessToken] = useState<string>('');
+  const [stravaRefreshToken, setStravaRefreshToken] = useState<string>('');
+  const [stravaExpiresAt, setStravaExpiresAt] = useState<number | null>(null);
+  const [stravaClientId, setStravaClientId] = useState<string>('');
+  const [stravaClientSecret, setStravaClientSecret] = useState<string>('');
+  const [stravaAthleteName, setStravaAthleteName] = useState<string>('');
+
   const [showConfig, setShowConfig] = useState<boolean>(false);
   const [activeTrace, setActiveTrace] = useState<1 | 2>(targetTrace);
 
@@ -108,20 +132,46 @@ export default function IntervalsActivityModal({
     let cancelled = false;
 
     const initModal = async () => {
-      const creds = await getUserIntervalsCredentials(currentUser?.uid);
+      const [intervalsCreds, stravaCreds] = await Promise.all([
+        getUserIntervalsCredentials(currentUser?.uid),
+        getUserStravaCredentials(currentUser?.uid),
+      ]);
       if (cancelled) return;
 
-      const storedId = creds.athleteId;
-      const storedKey = creds.apiKey;
+      const storedId = intervalsCreds.athleteId;
+      const storedKey = intervalsCreds.apiKey;
       const effId = initialAthleteId || athleteId || storedId;
       setAthleteId(effId);
       setApiKey(storedKey);
+
+      setStravaAccessToken(stravaCreds.accessToken || '');
+      setStravaRefreshToken(stravaCreds.refreshToken || '');
+      setStravaExpiresAt(stravaCreds.expiresAt || null);
+      setStravaClientId(stravaCreds.clientId || '');
+      setStravaClientSecret(stravaCreds.clientSecret || '');
+      if (stravaCreds.athleteName) {
+        setStravaAthleteName(stravaCreds.athleteName);
+      }
 
       if (initialAthleteName) {
         setCurrentAthleteName(initialAthleteName);
       }
 
-      if (effId && storedKey) {
+      // Choix intelligent de la source par défaut : Strava si configuré (grand public), sinon Intervals.icu si configuré
+      if (stravaCreds.accessToken || stravaCreds.refreshToken) {
+        setProvider('strava');
+        setShowConfig(false);
+        loadStravaActivities(
+          stravaCreds.accessToken,
+          stravaCreds.refreshToken,
+          stravaCreds.expiresAt,
+          stravaCreds.clientId,
+          stravaCreds.clientSecret,
+          dateRange
+        );
+      } else if (effId && storedKey) {
+        setProvider('intervals');
+        setShowConfig(false);
         loadActivities(effId, storedKey, dateRange);
         loadAthleteInfo(effId, storedKey, storedId);
       } else {
@@ -133,7 +183,23 @@ export default function IntervalsActivityModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, initialAthleteId, initialAthleteName, dateRange, currentUser?.uid]);
+  }, [isOpen, initialAthleteId, initialAthleteName, currentUser?.uid]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (provider === 'strava' && (stravaAccessToken || stravaRefreshToken)) {
+      loadStravaActivities(
+        stravaAccessToken,
+        stravaRefreshToken,
+        stravaExpiresAt,
+        stravaClientId,
+        stravaClientSecret,
+        dateRange
+      );
+    } else if (provider === 'intervals' && athleteId && apiKey) {
+      loadActivities(athleteId, apiKey, dateRange);
+    }
+  }, [dateRange, provider]);
 
   const loadAthleteInfo = async (activeId: string, key: string, defaultCoachId?: string) => {
     if (!key || !key.trim()) return;
@@ -266,6 +332,72 @@ export default function IntervalsActivityModal({
     }
   };
 
+  const loadStravaActivities = async (
+    access: string,
+    refresh: string,
+    expires: number | null | undefined,
+    cId: string | undefined,
+    cSecret: string | undefined,
+    range: '30d' | '90d' | '180d' | '365d'
+  ) => {
+    if (!access.trim() && !refresh.trim()) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    let days = 90;
+    if (range === '30d') days = 30;
+    if (range === '180d') days = 180;
+    if (range === '365d') days = 365;
+
+    try {
+      const res = await fetchStravaActivitiesList({
+        accessToken: access,
+        refreshToken: refresh,
+        expiresAt: expires,
+        clientId: cId,
+        clientSecret: cSecret,
+        days,
+      });
+      setActivities(res.activities);
+      setStravaAccessToken(res.accessToken);
+      if (res.refreshToken) setStravaRefreshToken(res.refreshToken);
+      if (res.expiresAt) setStravaExpiresAt(res.expiresAt);
+      if (res.athleteName) setStravaAthleteName(res.athleteName);
+
+      if (currentUser?.uid) {
+        saveUserStravaCredentials(currentUser.uid, {
+          accessToken: res.accessToken,
+          refreshToken: res.refreshToken,
+          expiresAt: res.expiresAt,
+          athleteId: res.athleteId,
+          athleteName: res.athleteName,
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Erreur lors du chargement des activités depuis Strava.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveStravaCredentials = async () => {
+    const cleanAccess = normalizeStravaToken(stravaAccessToken);
+    const cleanRefresh = normalizeStravaToken(stravaRefreshToken);
+    if (!cleanAccess && !cleanRefresh) {
+      setErrorMessage("Veuillez coller votre Access Token Strava (ou Refresh Token).");
+      return;
+    }
+    setShowConfig(false);
+    await loadStravaActivities(
+      cleanAccess,
+      cleanRefresh,
+      stravaExpiresAt,
+      stravaClientId,
+      stravaClientSecret,
+      dateRange
+    );
+  };
+
   const loadActivities = async (id: string, key: string, range: '30d' | '90d' | '180d' | '365d') => {
     if (!id.trim() || !key.trim()) return;
 
@@ -336,16 +468,23 @@ export default function IntervalsActivityModal({
   };
 
   // Activity selection & stream download
-  const handleSelectActivity = async (act: IntervalsActivity, chosenTrace?: 1 | 2) => {
+  const handleSelectActivity = async (act: IntervalsActivity & { summary_polyline?: string }, chosenTrace?: 1 | 2) => {
     const target = chosenTrace || activeTrace;
     setLoadingActivityId(act.id);
     setErrorMessage(null);
 
     try {
-      const streams = await fetchActivityStreams(act.id, apiKey.trim());
-      const course = parseIntervalsActivityToCourse(act, streams);
-      onSelectActivity(course, target);
-      onClose();
+      if (provider === 'strava') {
+        const streams = await fetchStravaStreams(act.id, stravaAccessToken.trim());
+        const course = parseStravaActivityToCourse(act, streams);
+        onSelectActivity(course, target);
+        onClose();
+      } else {
+        const streams = await fetchActivityStreams(act.id, apiKey.trim());
+        const course = parseIntervalsActivityToCourse(act, streams);
+        onSelectActivity(course, target);
+        onClose();
+      }
     } catch (err: any) {
       setErrorMessage(`Impossible d'importer la séance "${act.name}" : ${err.message || err}`);
     } finally {
@@ -404,22 +543,43 @@ export default function IntervalsActivityModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Bar */}
-        <div className="p-5 md:px-6 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div className="p-5 md:px-6 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-orange-600/20 border border-orange-500/30 flex items-center justify-center text-orange-400">
               <Activity size={22} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base md:text-lg font-bold text-white">
-                  Séances & Entraînements Intervals.icu
+                  Importer une Séance ou Course ({provider === 'strava' ? 'Strava' : 'Intervals.icu'})
                 </h2>
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                  Direct API
-                </span>
+                <div className="inline-flex rounded-xl p-0.5 bg-slate-800 border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setProvider('strava')}
+                    className={`px-2.5 py-1 text-[11px] font-extrabold rounded-lg transition ${
+                      provider === 'strava'
+                        ? 'bg-[#FC4C02] text-white shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Strava (Grand Public)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProvider('intervals')}
+                    className={`px-2.5 py-1 text-[11px] font-extrabold rounded-lg transition ${
+                      provider === 'intervals'
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Intervals.icu
+                  </button>
+                </div>
               </div>
               <p className="text-xs text-slate-400">
-                Importez vos sorties enregistrées pour les comparer point par point avec le Virtual Partner
+                Importez vos sorties GPS pour les comparer point par point ou rétro-synchroniser votre Roadbook
               </p>
             </div>
           </div>
@@ -509,83 +669,145 @@ export default function IntervalsActivityModal({
         {/* Credentials / Athlete Selection Drawer */}
         {showConfig && (
           <div className="p-4 md:p-5 bg-gradient-to-r from-orange-50/70 via-slate-50 to-white border-b border-orange-100 space-y-3 shrink-0">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
-                <Key size={14} className="text-orange-600" />
-                Accès API Intervals.icu
-              </h3>
-              <a
-                href="https://intervals.icu/settings"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] font-semibold text-orange-600 hover:underline flex items-center gap-1"
-              >
-                Ouvrir les paramètres Intervals.icu <ExternalLink size={11} />
-              </a>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-white/80 border border-orange-200/70 text-[11px] text-slate-600 leading-relaxed">
-              💡 <strong>Comment lier sans erreur 401 :</strong> Sur <code>intervals.icu/settings</code>, descendez jusqu&apos;à <strong>Developer Settings &gt; API Key</strong> (ne mettez pas votre mot de passe). Vous pouvez laisser l&apos;ID Athlète vide ou à <code>0</code> : votre vrai identifiant <code>i123456</code> sera auto-détecté !
-            </div>
-
-            <div className={`grid grid-cols-1 gap-3 ${coachedAthletes.length > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
-              {/* Athlete selector if coach has athletes */}
-              {coachedAthletes.length > 0 && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-                    Athlète coaché ({coachedAthletes.length})
-                  </label>
-                  <select
-                    value={athleteId}
-                    onChange={(e) => handleSwitchAthlete(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500 shadow-2xs cursor-pointer"
+            {provider === 'strava' ? (
+              <>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Key size={14} className="text-[#FC4C02]" />
+                    Connexion Strava (Grand Public)
+                  </h3>
+                  <a
+                    href="https://www.strava.com/settings/api"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-semibold text-[#FC4C02] hover:underline flex items-center gap-1"
                   >
-                    {coachedAthletes.map((a) => (
-                      <option key={a.id} value={a.id} className="text-slate-900 bg-white font-medium py-1">
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
+                    Ouvrir strava.com/settings/api <ExternalLink size={11} />
+                  </a>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-                  ID Athlète Intervals (ex: i12345 ou 0)
-                </label>
-                <input
-                  type="text"
-                  placeholder="ID Athlète (ex: i12345)"
-                  value={athleteId}
-                  onChange={(e) => setAthleteId(e.target.value)}
-                  className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500"
-                />
-              </div>
+                <div className="p-2.5 rounded-xl bg-white/80 border border-orange-200/70 text-[11px] text-slate-600 leading-relaxed">
+                  💡 <strong>Astuce :</strong> Si vous avez déjà connecté Strava dans vos <strong>Paramètres</strong>, vos sorties s&apos;affichent automatiquement. Sinon, collez votre <strong>Access Token</strong> (depuis <code>strava.com/settings/api</code>) ci-dessous.
+                </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-                  Clé API (Settings &gt; Developer)
-                </label>
-                <input
-                  type="password"
-                  placeholder="Clé API secrète"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500"
-                />
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
+                      Access Token Strava
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Votre Access Token Strava..."
+                      value={stravaAccessToken}
+                      onChange={(e) => setStravaAccessToken(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
+                      Refresh Token (Optionnel)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Refresh Token..."
+                      value={stravaRefreshToken}
+                      onChange={(e) => setStravaRefreshToken(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleSaveStravaCredentials}
+                      className="w-full py-2 bg-[#FC4C02] hover:bg-orange-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>Charger mes sorties Strava</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Key size={14} className="text-orange-600" />
+                    Accès API Intervals.icu
+                  </h3>
+                  <a
+                    href="https://intervals.icu/settings"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-semibold text-orange-600 hover:underline flex items-center gap-1"
+                  >
+                    Ouvrir les paramètres Intervals.icu <ExternalLink size={11} />
+                  </a>
+                </div>
 
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={handleSaveCredentials}
-                  className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
-                >
-                  <CheckCircle2 size={14} />
-                  <span>Sauvegarder & Charger</span>
-                </button>
-              </div>
-            </div>
+                <div className="p-2.5 rounded-xl bg-white/80 border border-orange-200/70 text-[11px] text-slate-600 leading-relaxed">
+                  💡 <strong>Comment lier sans erreur 401 :</strong> Sur <code>intervals.icu/settings</code>, descendez jusqu&apos;à <strong>Developer Settings &gt; API Key</strong> (ne mettez pas votre mot de passe). Vous pouvez laisser l&apos;ID Athlète vide ou à <code>0</code> : votre vrai identifiant <code>i123456</code> sera auto-détecté !
+                </div>
+
+                <div className={`grid grid-cols-1 gap-3 ${coachedAthletes.length > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
+                  {/* Athlete selector if coach has athletes */}
+                  {coachedAthletes.length > 0 && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
+                        Athlète coaché ({coachedAthletes.length})
+                      </label>
+                      <select
+                        value={athleteId}
+                        onChange={(e) => handleSwitchAthlete(e.target.value)}
+                        className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500 shadow-2xs cursor-pointer"
+                      >
+                        {coachedAthletes.map((a) => (
+                          <option key={a.id} value={a.id} className="text-slate-900 bg-white font-medium py-1">
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
+                      ID Athlète Intervals (ex: i12345 ou 0)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="ID Athlète (ex: i12345)"
+                      value={athleteId}
+                      onChange={(e) => setAthleteId(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
+                      Clé API (Settings &gt; Developer)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Clé API secrète"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleSaveCredentials}
+                      className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>Sauvegarder & Charger</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -685,7 +907,18 @@ export default function IntervalsActivityModal({
 
             {/* Refresh button */}
             <button
-              onClick={() => loadActivities(athleteId, apiKey, dateRange)}
+              onClick={() =>
+                provider === 'strava'
+                  ? loadStravaActivities(
+                      stravaAccessToken,
+                      stravaRefreshToken,
+                      stravaExpiresAt,
+                      stravaClientId,
+                      stravaClientSecret,
+                      dateRange
+                    )
+                  : loadActivities(athleteId, apiKey, dateRange)
+              }
               disabled={isLoading}
               className="p-1.5 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition disabled:opacity-50"
               title="Rafraîchir la liste"
@@ -743,12 +976,20 @@ export default function IntervalsActivityModal({
                 onClick={async () => {
                   setIsCalibratingStreams(true);
                   try {
-                    const highPrecisionProfile = await calibrateAthleteProfileWithStreams(
-                      activities,
-                      apiKey,
-                      activeRoadbookDistanceKm,
-                      activeRoadbookElevationGainM
-                    );
+                    const highPrecisionProfile =
+                      provider === 'strava'
+                        ? await calibrateAthleteProfileWithStravaStreams(
+                            activities,
+                            stravaAccessToken,
+                            activeRoadbookDistanceKm,
+                            activeRoadbookElevationGainM
+                          )
+                        : await calibrateAthleteProfileWithStreams(
+                            activities,
+                            apiKey,
+                            activeRoadbookDistanceKm,
+                            activeRoadbookElevationGainM
+                          );
                     onCalibrateFromRaces(highPrecisionProfile || raceCalibrationProfile);
                     onClose();
                   } finally {

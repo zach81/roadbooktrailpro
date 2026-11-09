@@ -67,7 +67,7 @@ export interface ParsedCourse {
   avgHr?: number;
   maxHr?: number;
   dateStr?: string;
-  sourceType: 'GPX' | 'TCX' | 'FIT' | 'INTERVALS' | 'ROADBOOK';
+  sourceType: 'GPX' | 'TCX' | 'FIT' | 'INTERVALS' | 'STRAVA' | 'ROADBOOK';
   waypoints?: CourseWaypoint[];
   targetTimeFormatted?: string;
   pacingStrategy?: string;
@@ -116,7 +116,7 @@ export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2
  * Normalizes raw points: calculates cumulative distance, smoothed elevation gain/loss,
  * elapsed times, and speeds.
  */
-function normalizePoints(rawPoints: Array<{ lat: number; lon: number; ele: number; time?: Date; hr?: number }>, defaultName: string, sourceType: 'GPX' | 'TCX' | 'FIT' | 'INTERVALS'): ParsedCourse {
+function normalizePoints(rawPoints: Array<{ lat: number; lon: number; ele: number; time?: Date; hr?: number }>, defaultName: string, sourceType: 'GPX' | 'TCX' | 'FIT' | 'INTERVALS' | 'STRAVA'): ParsedCourse {
   if (rawPoints.length === 0) {
     throw new Error('Fichier sans coordonnées GPS valides.');
   }
@@ -1029,4 +1029,133 @@ export function parseIntervalsActivityToCourse(
 
   const defaultName = activity.name || `Intervals ${activity.id}`;
   return normalizePoints(rawPoints, defaultName, 'INTERVALS');
+}
+
+/**
+ * Décode une Google Encoded Polyline (ex: `map.summary_polyline` de Strava) en tableau de points GPS.
+ */
+export function decodeEncodedPolyline(encoded: string): Array<{ lat: number; lon: number }> {
+  if (!encoded || typeof encoded !== 'string') return [];
+  const points: Array<{ lat: number; lon: number }> = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < len) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push({
+      lat: lat / 1e5,
+      lon: lng / 1e5,
+    });
+  }
+
+  return points;
+}
+
+/**
+ * Convertit une activité Strava et ses flux (latlng, time, altitude, heartrate)
+ * en un objet standardisé `ParsedCourse`.
+ */
+export function parseStravaActivityToCourse(
+  activity: {
+    id: string | number;
+    name?: string;
+    type?: string;
+    start_date_local?: string;
+    distance?: number;
+    total_elevation_gain?: number;
+    moving_time?: number;
+    elapsed_time?: number;
+    summary_polyline?: string;
+  },
+  streams?: Record<string, any> | Array<{ type: string; data?: any[] }> | null
+): ParsedCourse {
+  let streamMap: Record<string, any[]> = {};
+
+  if (Array.isArray(streams)) {
+    for (const s of streams) {
+      if (s && s.type && Array.isArray(s.data)) {
+        streamMap[s.type] = s.data;
+      }
+    }
+  } else if (streams && typeof streams === 'object') {
+    for (const k of Object.keys(streams)) {
+      if (Array.isArray(streams[k])) {
+        streamMap[k] = streams[k];
+      } else if (streams[k] && Array.isArray(streams[k].data)) {
+        streamMap[k] = streams[k].data;
+      }
+    }
+  }
+
+  const latlngArr = streamMap.latlng || [];
+  const timeArr = streamMap.time || [];
+  const altArr = streamMap.altitude || [];
+  const hrArr = streamMap.heartrate || [];
+
+  const startMs = activity.start_date_local ? new Date(activity.start_date_local).getTime() : Date.now();
+  const rawPoints: Array<{ lat: number; lon: number; ele: number; time?: Date; hr?: number }> = [];
+
+  if (Array.isArray(latlngArr) && latlngArr.length > 0) {
+    for (let i = 0; i < latlngArr.length; i++) {
+      const pair = latlngArr[i];
+      if (!Array.isArray(pair) || pair.length < 2) continue;
+      const lat = Number(pair[0]);
+      const lon = Number(pair[1]);
+      if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+      if (Math.abs(lat) < 0.0001 && Math.abs(lon) < 0.0001) continue;
+
+      const elapsed = timeArr[i] !== undefined ? Number(timeArr[i]) : i;
+      const ele = altArr[i] !== undefined ? Number(altArr[i]) : 0;
+      const hr = hrArr[i] !== undefined ? Math.round(Number(hrArr[i])) : undefined;
+
+      rawPoints.push({
+        lat,
+        lon,
+        ele,
+        time: new Date(startMs + elapsed * 1000),
+        hr,
+      });
+    }
+  } else if (activity.summary_polyline) {
+    const polyPts = decodeEncodedPolyline(activity.summary_polyline);
+    const totalSec = activity.moving_time || activity.elapsed_time || 3600;
+    const stepSec = polyPts.length > 1 ? totalSec / (polyPts.length - 1) : 1;
+    polyPts.forEach((pt, idx) => {
+      rawPoints.push({
+        lat: pt.lat,
+        lon: pt.lon,
+        ele: 0,
+        time: new Date(startMs + Math.round(idx * stepSec) * 1000),
+      });
+    });
+  }
+
+  if (rawPoints.length === 0) {
+    throw new Error("Cette activité Strava ne contient pas de coordonnées GPS.");
+  }
+
+  const defaultName = activity.name || `Strava ${activity.id}`;
+  return normalizePoints(rawPoints, defaultName, 'STRAVA');
 }

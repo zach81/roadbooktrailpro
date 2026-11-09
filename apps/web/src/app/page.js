@@ -49,6 +49,25 @@ export default function Home() {
             <Link href="/register" className={`btn btn-primary ${styles.mainCta}`}>
               Commencer gratuitement <ArrowRight size={18} />
             </Link>
+            <Link
+              href="/login"
+              className="btn"
+              style={{
+                background: 'linear-gradient(135deg, #FC4C02 0%, #E34402 100%)',
+                color: '#FFFFFF',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                border: 'none',
+                boxShadow: '0 4px 14px rgba(252, 76, 2, 0.3)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+              </svg>
+              Continuer avec Strava
+            </Link>
             <Link href="/login" className="btn btn-secondary">
               Se connecter
             </Link>

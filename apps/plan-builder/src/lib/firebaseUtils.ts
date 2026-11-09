@@ -12,6 +12,16 @@ export interface IntervalsCredentials {
   apiKey: string;
 }
 
+export interface StravaCredentials {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt?: number | null;
+  athleteId?: string;
+  athleteName?: string;
+  clientId?: string;
+  clientSecret?: string;
+}
+
 /**
  * Supprime récursivement les clés ayant la valeur `undefined` pour éviter l'erreur
  * FirebaseError: Unsupported field value: undefined dans Firestore.
@@ -147,6 +157,109 @@ export async function saveUserIntervalsCredentials(
   } catch {
     // Ignoré si l'utilisateur n'est pas admin (coaches/{uid} est réservé aux admins)
   }
+}
+
+/**
+ * Récupère les identifiants Strava rattachés au compte connecté (`uid`) depuis `users/{uid}` ou le cache local scopé.
+ */
+export async function getUserStravaCredentials(uid?: string | null): Promise<StravaCredentials> {
+  if (!uid) return { accessToken: '', refreshToken: '' };
+
+  const scopedTokenKey = `mykairn_strava_token_${uid}`;
+  const scopedRefreshKey = `mykairn_strava_refresh_${uid}`;
+  const scopedClientIdKey = `mykairn_strava_client_id_${uid}`;
+  const scopedClientSecretKey = `mykairn_strava_client_secret_${uid}`;
+
+  try {
+    const userRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      const uData = userSnap.data();
+      const accessToken = String(uData?.stravaAccessToken || '').trim();
+      const refreshToken = String(uData?.stravaRefreshToken || '').trim();
+      const expiresAt = uData?.stravaExpiresAt ? Number(uData.stravaExpiresAt) : null;
+      const athleteId = String(uData?.stravaAthleteId || '').trim();
+      const athleteName = String(uData?.stravaAthleteName || '').trim();
+      const clientId = String(uData?.stravaClientId || '').trim();
+      const clientSecret = String(uData?.stravaClientSecret || '').trim();
+
+      if (accessToken || refreshToken) {
+        if (typeof window !== 'undefined') {
+          if (accessToken) localStorage.setItem(scopedTokenKey, accessToken);
+          if (refreshToken) localStorage.setItem(scopedRefreshKey, refreshToken);
+          if (clientId) localStorage.setItem(scopedClientIdKey, clientId);
+          if (clientSecret) localStorage.setItem(scopedClientSecretKey, clientSecret);
+        }
+        return {
+          accessToken,
+          refreshToken,
+          expiresAt,
+          athleteId,
+          athleteName,
+          clientId,
+          clientSecret,
+        };
+      }
+    }
+  } catch {
+    // Fallback localStorage
+  }
+
+  if (typeof window !== 'undefined') {
+    const cachedToken = (localStorage.getItem(scopedTokenKey) || '').trim();
+    const cachedRefresh = (localStorage.getItem(scopedRefreshKey) || '').trim();
+    const cachedClientId = (localStorage.getItem(scopedClientIdKey) || '').trim();
+    const cachedClientSecret = (localStorage.getItem(scopedClientSecretKey) || '').trim();
+    if (cachedToken || cachedRefresh) {
+      return {
+        accessToken: cachedToken,
+        refreshToken: cachedRefresh,
+        clientId: cachedClientId,
+        clientSecret: cachedClientSecret,
+      };
+    }
+  }
+
+  return { accessToken: '', refreshToken: '' };
+}
+
+/**
+ * Sauvegarde les identifiants Strava pour le compte connecté (`uid`) dans `users/{uid}`.
+ */
+export async function saveUserStravaCredentials(
+  uid: string,
+  creds: Partial<StravaCredentials>
+): Promise<void> {
+  if (!uid) throw new Error('Vous devez être connecté pour enregistrer vos identifiants Strava.');
+
+  const scopedTokenKey = `mykairn_strava_token_${uid}`;
+  const scopedRefreshKey = `mykairn_strava_refresh_${uid}`;
+  const scopedClientIdKey = `mykairn_strava_client_id_${uid}`;
+  const scopedClientSecretKey = `mykairn_strava_client_secret_${uid}`;
+
+  const cleanAccess = (creds.accessToken || '').trim();
+  const cleanRefresh = (creds.refreshToken || '').trim();
+
+  if (typeof window !== 'undefined') {
+    if (cleanAccess) localStorage.setItem(scopedTokenKey, cleanAccess);
+    if (cleanRefresh) localStorage.setItem(scopedRefreshKey, cleanRefresh);
+    if (creds.clientId) localStorage.setItem(scopedClientIdKey, creds.clientId.trim());
+    if (creds.clientSecret) localStorage.setItem(scopedClientSecretKey, creds.clientSecret.trim());
+  }
+
+  const payload = stripUndefined({
+    stravaAccessToken: cleanAccess || undefined,
+    stravaRefreshToken: cleanRefresh || undefined,
+    stravaExpiresAt: creds.expiresAt ?? undefined,
+    stravaAthleteId: creds.athleteId || undefined,
+    stravaAthleteName: creds.athleteName || undefined,
+    stravaClientId: creds.clientId?.trim() || undefined,
+    stravaClientSecret: creds.clientSecret?.trim() || undefined,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const userRef = doc(db, 'users', uid);
+  await setDoc(userRef, payload, { merge: true });
 }
 
 /**
